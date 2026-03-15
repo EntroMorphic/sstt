@@ -21,6 +21,9 @@ sstt_v2: sstt_v2.c
 sstt_bytepacked: sstt_bytepacked.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_bytecascade: sstt_bytecascade.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_pentary: sstt_pentary.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
