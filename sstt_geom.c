@@ -24,6 +24,8 @@
 /* ---------- Config ---------- */
 #define TRAIN_N     60000
 #define TEST_N      10000
+#define IMG_W       28
+#define IMG_H       28
 #define PIXELS      784         /* 28 x 28 */
 #define PADDED      800         /* 25 x 32, clean AVX2 */
 #define N_CLASSES   10
@@ -34,6 +36,10 @@
 #define N_BVALS     27          /* 3^3 possible block values */
 #define SIG_PAD     288         /* 9 × 32, clean AVX2 */
 #define MAX_K       1000        /* max candidates for refinement */
+
+/* Gradient background: block_encode(0,0,0) = 13 (flat region, no transition) */
+#define BG_GRAD     13
+#define CLS_PAD     16          /* pad 10 classes to 16 for AVX2 */
 
 /* TST multi-resolution hierarchy (FFT-style butterfly cascade) */
 #define TST_L0      261         /* = N_BLOCKS, 3-trit blocks */
@@ -125,6 +131,31 @@ static int8_t *sdf_tern_train;   /* [TRAIN_N * PADDED], SDF ternary at best T */
 static int8_t *sdf_tern_test;    /* [TEST_N * PADDED] */
 static uint8_t *sdf_train_sigs;  /* [TRAIN_N * SIG_PAD], SDF block sigs */
 static uint8_t *sdf_test_sigs;   /* [TEST_N * SIG_PAD] */
+
+/* Gradient data */
+static int8_t *hgrad_train;      /* [TRAIN_N * PADDED] */
+static int8_t *hgrad_test;       /* [TEST_N * PADDED] */
+static int8_t *vgrad_train;      /* [TRAIN_N * PADDED] */
+static int8_t *vgrad_test;       /* [TEST_N * PADDED] */
+static uint8_t *hg_train_sigs;   /* [TRAIN_N * SIG_PAD] */
+static uint8_t *hg_test_sigs;    /* [TEST_N * SIG_PAD] */
+static uint8_t *vg_train_sigs;   /* [TRAIN_N * SIG_PAD] */
+static uint8_t *vg_test_sigs;    /* [TEST_N * SIG_PAD] */
+
+/* Gradient hot maps */
+static uint32_t hg_hot_map[N_BLOCKS][N_BVALS][CLS_PAD]
+    __attribute__((aligned(32)));
+static uint32_t vg_hot_map[N_BLOCKS][N_BVALS][CLS_PAD]
+    __attribute__((aligned(32)));
+
+/* Gradient-SDF hot maps */
+static uint32_t hg_sdf_hot[N_BLOCKS][N_BVALS][CLS_PAD]
+    __attribute__((aligned(32)));
+static uint32_t vg_sdf_hot[N_BLOCKS][N_BVALS][CLS_PAD]
+    __attribute__((aligned(32)));
+/* Gradient-SDF test sigs (kept for classification) */
+static uint8_t *hg_sdf_test_sigs;
+static uint8_t *vg_sdf_test_sigs;
 
 /* Inverted index: flat pool of image IDs, indexed by (block_pos, block_val) */
 static uint32_t *idx_pool;
@@ -275,6 +306,58 @@ static void quantize_all(void) {
     for (int i = 0; i < TEST_N; i++)
         quantize_one(raw_test_img + (size_t)i * PIXELS,
                      tern_test + (size_t)i * PADDED);
+}
+
+/* ================================================================
+ *  Gradient Computation
+ *
+ *  h_grad[y][x] = clamp(tern[y][x+1] - tern[y][x], {-1,0,+1})
+ *  v_grad[y][x] = clamp(tern[y+1][x] - tern[y][x], {-1,0,+1})
+ * ================================================================ */
+
+static inline int8_t clamp_trit(int v) {
+    if (v > 0) return 1;
+    if (v < 0) return -1;
+    return 0;
+}
+
+static void compute_gradients_one(const int8_t *tern,
+                                   int8_t *h_grad, int8_t *v_grad) {
+    for (int y = 0; y < IMG_H; y++) {
+        for (int x = 0; x < IMG_W - 1; x++) {
+            int diff = tern[y * IMG_W + x + 1] - tern[y * IMG_W + x];
+            h_grad[y * IMG_W + x] = clamp_trit(diff);
+        }
+        h_grad[y * IMG_W + IMG_W - 1] = 0;
+    }
+    memset(h_grad + PIXELS, 0, PADDED - PIXELS);
+
+    for (int y = 0; y < IMG_H - 1; y++) {
+        for (int x = 0; x < IMG_W; x++) {
+            int diff = tern[(y + 1) * IMG_W + x] - tern[y * IMG_W + x];
+            v_grad[y * IMG_W + x] = clamp_trit(diff);
+        }
+    }
+    memset(v_grad + (IMG_H - 1) * IMG_W, 0, IMG_W);
+    memset(v_grad + PIXELS, 0, PADDED - PIXELS);
+}
+
+static void compute_all_gradients(void) {
+    hgrad_train = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+    hgrad_test  = (int8_t *)aligned_alloc(32, (size_t)TEST_N  * PADDED);
+    vgrad_train = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+    vgrad_test  = (int8_t *)aligned_alloc(32, (size_t)TEST_N  * PADDED);
+    if (!hgrad_train || !hgrad_test || !vgrad_train || !vgrad_test) {
+        fprintf(stderr, "ERROR: gradient alloc failed\n"); exit(1);
+    }
+    for (int i = 0; i < TRAIN_N; i++)
+        compute_gradients_one(tern_train + (size_t)i * PADDED,
+                              hgrad_train + (size_t)i * PADDED,
+                              vgrad_train + (size_t)i * PADDED);
+    for (int i = 0; i < TEST_N; i++)
+        compute_gradients_one(tern_test + (size_t)i * PADDED,
+                              hgrad_test + (size_t)i * PADDED,
+                              vgrad_test + (size_t)i * PADDED);
 }
 
 /* ================================================================
@@ -520,6 +603,42 @@ static void compute_sigs(void) {
     }
 }
 
+static void compute_grad_sigs(void) {
+    hg_train_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
+    hg_test_sigs  = (uint8_t *)aligned_alloc(32, (size_t)TEST_N  * SIG_PAD);
+    vg_train_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
+    vg_test_sigs  = (uint8_t *)aligned_alloc(32, (size_t)TEST_N  * SIG_PAD);
+    if (!hg_train_sigs || !hg_test_sigs || !vg_train_sigs || !vg_test_sigs) {
+        fprintf(stderr, "ERROR: grad sig alloc failed\n"); exit(1);
+    }
+
+    for (int i = 0; i < TRAIN_N; i++) {
+        const int8_t *himg = hgrad_train + (size_t)i * PADDED;
+        uint8_t *hsig = hg_train_sigs + (size_t)i * SIG_PAD;
+        const int8_t *vimg = vgrad_train + (size_t)i * PADDED;
+        uint8_t *vsig = vg_train_sigs + (size_t)i * SIG_PAD;
+        for (int k = 0; k < N_BLOCKS; k++) {
+            hsig[k] = block_encode(himg[k*3], himg[k*3+1], himg[k*3+2]);
+            vsig[k] = block_encode(vimg[k*3], vimg[k*3+1], vimg[k*3+2]);
+        }
+        memset(hsig + N_BLOCKS, 0xFF, SIG_PAD - N_BLOCKS);
+        memset(vsig + N_BLOCKS, 0xFF, SIG_PAD - N_BLOCKS);
+    }
+
+    for (int i = 0; i < TEST_N; i++) {
+        const int8_t *himg = hgrad_test + (size_t)i * PADDED;
+        uint8_t *hsig = hg_test_sigs + (size_t)i * SIG_PAD;
+        const int8_t *vimg = vgrad_test + (size_t)i * PADDED;
+        uint8_t *vsig = vg_test_sigs + (size_t)i * SIG_PAD;
+        for (int k = 0; k < N_BLOCKS; k++) {
+            hsig[k] = block_encode(himg[k*3], himg[k*3+1], himg[k*3+2]);
+            vsig[k] = block_encode(vimg[k*3], vimg[k*3+1], vimg[k*3+2]);
+        }
+        memset(hsig + N_BLOCKS, 0xFF, SIG_PAD - N_BLOCKS);
+        memset(vsig + N_BLOCKS, 0xFF, SIG_PAD - N_BLOCKS);
+    }
+}
+
 static void build_index(void) {
     /* Pass 1: count bucket sizes */
     memset(idx_sz, 0, sizeof(idx_sz));
@@ -582,6 +701,12 @@ typedef struct {
     int32_t dot;
 } candidate_t;
 
+static int cmp_u32(const void *a, const void *b) {
+    uint32_t va = *(const uint32_t *)a;
+    uint32_t vb = *(const uint32_t *)b;
+    return (va > vb) - (va < vb);
+}
+
 static int cmp_votes_desc(const void *a, const void *b) {
     return (int)((const candidate_t *)b)->votes -
            (int)((const candidate_t *)a)->votes;
@@ -628,10 +753,11 @@ static void test_indexed(double nn_acc, double nn_time) {
     int correct_vote = 0;   /* vote-only classification (no dot product) */
 
     double t0 = now_sec();
+    uint16_t *votes = calloc(TRAIN_N, sizeof(uint16_t));
+    if (!votes) { fprintf(stderr, "ERROR: votes alloc failed\n"); exit(1); }
 
     for (int i = 0; i < TEST_N; i++) {
-        uint16_t votes[TRAIN_N];
-        memset(votes, 0, sizeof(votes));
+        memset(votes, 0, TRAIN_N * sizeof(uint16_t));
 
         const uint8_t *qsig = test_sigs + (size_t)i * SIG_PAD;
 
@@ -693,6 +819,7 @@ static void test_indexed(double nn_acc, double nn_time) {
                     i + 1, TEST_N, 100.0 * correct_vote / (i + 1));
     }
     fprintf(stderr, "\n");
+    free(votes);
 
     double elapsed = now_sec() - t0;
 
@@ -733,8 +860,6 @@ static void test_indexed(double nn_acc, double nn_time) {
  *  Persists to disk. Load once, prefetch, keep hot.
  * ================================================================ */
 
-#define CLS_PAD 16  /* pad 10 classes to 16 for clean AVX2 (2 × __m256i) */
-
 static uint32_t hot_map[N_BLOCKS][N_BVALS][CLS_PAD]
     __attribute__((aligned(32)));
 
@@ -749,6 +874,43 @@ static void build_hot_map(void) {
         for (int k = 0; k < N_BLOCKS; k++)
             hot_map[k][sig[k]][lbl]++;
     }
+}
+
+/* Generalized hot map builder: works with any sig array */
+static void build_hot_map_gen(const uint8_t *sigs, int n,
+                               uint32_t hot[][N_BVALS][CLS_PAD]) {
+    memset(hot, 0, sizeof(uint32_t) * N_BLOCKS * N_BVALS * CLS_PAD);
+    for (int i = 0; i < n; i++) {
+        int lbl = train_labels[i];
+        const uint8_t *sig = sigs + (size_t)i * SIG_PAD;
+        for (int k = 0; k < N_BLOCKS; k++)
+            hot[k][sig[k]][lbl]++;
+    }
+}
+
+/* Generalized hot map classification with parameterized background skip */
+static inline int hot_classify_gen(const uint8_t *qsig,
+                                    uint32_t hot[][N_BVALS][CLS_PAD],
+                                    uint8_t bg_val) {
+    __m256i acc_lo = _mm256_setzero_si256();
+    __m256i acc_hi = _mm256_setzero_si256();
+
+    for (int k = 0; k < N_BLOCKS; k++) {
+        uint8_t bv = qsig[k];
+        if (bv == bg_val) continue;
+        const __m256i *cc = (const __m256i *)hot[k][bv];
+        acc_lo = _mm256_add_epi32(acc_lo, _mm256_load_si256(cc));
+        acc_hi = _mm256_add_epi32(acc_hi, _mm256_load_si256(cc + 1));
+    }
+
+    uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+    _mm256_store_si256((__m256i *)cv, acc_lo);
+    _mm256_store_si256((__m256i *)(cv + 8), acc_hi);
+
+    int best = 0;
+    for (int c = 1; c < N_CLASSES; c++)
+        if (cv[c] > cv[best]) best = c;
+    return best;
 }
 
 /* Touch every cache line to prime L2 */
@@ -937,14 +1099,15 @@ static void test_tst(double nn_acc, double nn_time) {
     int correct_mr_only = 0;
 
     double t0 = now_sec();
+    uint16_t *votes = calloc(TRAIN_N, sizeof(uint16_t));
+    if (!votes) { fprintf(stderr, "ERROR: votes alloc failed\n"); exit(1); }
 
     for (int i = 0; i < TEST_N; i++) {
         const uint8_t *qsig = test_sigs + (size_t)i * SIG_PAD;
         const int8_t *query = tern_test + (size_t)i * PADDED;
 
         /* Stage 1: Vote via inverted index (same as Test C) */
-        uint16_t votes[TRAIN_N];
-        memset(votes, 0, sizeof(votes));
+        memset(votes, 0, TRAIN_N * sizeof(uint16_t));
         for (int k = 0; k < N_BLOCKS; k++) {
             uint8_t bv = qsig[k];
             if (bv == 0) continue;
@@ -1011,6 +1174,7 @@ static void test_tst(double nn_acc, double nn_time) {
                     i + 1, TEST_N, 100.0 * correct_mr_only / (i + 1));
     }
     fprintf(stderr, "\n");
+    free(votes);
 
     double elapsed = now_sec() - t0;
 
@@ -1049,9 +1213,6 @@ static void test_tst(double nn_acc, double nn_time) {
  *  signatures → hot map cipher. Same 451KB table, different address
  *  space. Dual cipher = pixel + SDF hot maps combined (902KB).
  * ================================================================ */
-
-#define IMG_W 28
-#define IMG_H 28
 
 /*
  * Two-pass Chamfer distance transform on 28×28 ternary grid.
@@ -1130,6 +1291,63 @@ static void compute_raw_sdf(const int8_t *tern, int8_t *sdf) {
     }
 
     /* Step 4: apply sign, clamp to int8 */
+    for (int i = 0; i < PIXELS; i++) {
+        int16_t d = dist[i] * sign_map[i];
+        if (d > 127) d = 127;
+        if (d < -128) d = -128;
+        sdf[i] = (int8_t)d;
+    }
+    memset(sdf + PIXELS, 0, PADDED - PIXELS);
+}
+
+/* SDF variant for gradient/edge images where val=0 is background, not boundary.
+   Foreground = non-zero pixels. Measures signed distance from edge of foreground.
+   Interior (non-zero) gets negative distance, exterior (zero) gets positive. */
+static void compute_edge_sdf(const int8_t *tern, int8_t *sdf) {
+    int16_t dist[IMG_H * IMG_W];
+    int8_t sign_map[IMG_H * IMG_W];
+
+    for (int y = 0; y < IMG_H; y++) {
+        for (int x = 0; x < IMG_W; x++) {
+            int idx = y * IMG_W + x;
+            int fg = (tern[idx] != 0);  /* foreground = non-zero (edge pixel) */
+
+            /* Boundary = where foreground meets background */
+            int is_boundary = 0;
+            if (fg) {
+                if (y > 0 && tern[(y-1)*IMG_W+x] == 0) is_boundary = 1;
+                if (!is_boundary && y < IMG_H-1 && tern[(y+1)*IMG_W+x] == 0) is_boundary = 1;
+                if (!is_boundary && x > 0 && tern[y*IMG_W+x-1] == 0) is_boundary = 1;
+                if (!is_boundary && x < IMG_W-1 && tern[y*IMG_W+x+1] == 0) is_boundary = 1;
+            } else {
+                if (y > 0 && tern[(y-1)*IMG_W+x] != 0) is_boundary = 1;
+                if (!is_boundary && y < IMG_H-1 && tern[(y+1)*IMG_W+x] != 0) is_boundary = 1;
+                if (!is_boundary && x > 0 && tern[y*IMG_W+x-1] != 0) is_boundary = 1;
+                if (!is_boundary && x < IMG_W-1 && tern[y*IMG_W+x+1] != 0) is_boundary = 1;
+            }
+
+            dist[idx] = is_boundary ? 0 : 999;
+            sign_map[idx] = fg ? -1 : 1;  /* inside edge=-1, outside=+1 */
+        }
+    }
+
+    /* Forward Chamfer pass */
+    for (int y = 0; y < IMG_H; y++)
+        for (int x = 0; x < IMG_W; x++) {
+            int idx = y * IMG_W + x;
+            if (y > 0 && dist[(y-1)*IMG_W+x]+1 < dist[idx]) dist[idx] = dist[(y-1)*IMG_W+x]+1;
+            if (x > 0 && dist[y*IMG_W+x-1]+1 < dist[idx]) dist[idx] = dist[y*IMG_W+x-1]+1;
+        }
+
+    /* Backward Chamfer pass */
+    for (int y = IMG_H-1; y >= 0; y--)
+        for (int x = IMG_W-1; x >= 0; x--) {
+            int idx = y * IMG_W + x;
+            if (y < IMG_H-1 && dist[(y+1)*IMG_W+x]+1 < dist[idx]) dist[idx] = dist[(y+1)*IMG_W+x]+1;
+            if (x < IMG_W-1 && dist[y*IMG_W+x+1]+1 < dist[idx]) dist[idx] = dist[y*IMG_W+x+1]+1;
+        }
+
+    /* Apply sign and clamp */
     for (int i = 0; i < PIXELS; i++) {
         int16_t d = dist[i] * sign_map[i];
         if (d > 127) d = 127;
@@ -1430,12 +1648,6 @@ static void test_sdf_cipher(void) {
                 hashes[i] = h;
             }
             /* Count unique hashes (sort + count transitions) */
-            /* Simple insertion into sorted array is O(n²), use qsort */
-            int cmp_u32(const void *a, const void *b) {
-                uint32_t va = *(const uint32_t *)a;
-                uint32_t vb = *(const uint32_t *)b;
-                return (va > vb) - (va < vb);
-            }
             qsort(hashes, TRAIN_N, sizeof(uint32_t), cmp_u32);
             total_unique_sigs = 1;
             for (int i = 1; i < TRAIN_N; i++)
@@ -1456,9 +1668,7 @@ static void test_sdf_cipher(void) {
            (double)TRAIN_N / (total_unique_sigs > 0 ? total_unique_sigs : 1),
            TRAIN_N);
 
-    /* Free raw SDF (no longer needed), keep ternary + sigs for Test G */
-    free(sdf_raw_train); sdf_raw_train = NULL;
-    free(sdf_raw_test);  sdf_raw_test  = NULL;
+    /* Keep raw SDF alive for Test H (gradient-of-SDF needs it) */
 }
 
 /* ================================================================
@@ -1552,6 +1762,8 @@ static void test_combined(double nn_acc, double nn_time) {
     int total_blocks_used = 0, total_blocks_skipped = 0;
 
     double t0 = now_sec();
+    uint16_t *votes = calloc(TRAIN_N, sizeof(uint16_t));
+    if (!votes) { fprintf(stderr, "ERROR: votes alloc failed\n"); exit(1); }
 
     for (int i = 0; i < TEST_N; i++) {
         const uint8_t *qsig = test_sigs + (size_t)i * SIG_PAD;
@@ -1559,8 +1771,7 @@ static void test_combined(double nn_acc, double nn_time) {
         const int8_t *query = tern_test + (size_t)i * PADDED;
 
         /* SDF-masked pixel voting */
-        uint16_t votes[TRAIN_N];
-        memset(votes, 0, sizeof(votes));
+        memset(votes, 0, TRAIN_N * sizeof(uint16_t));
 
         for (int k = 0; k < N_BLOCKS; k++) {
             uint8_t bv = qsig[k];
@@ -1616,6 +1827,7 @@ static void test_combined(double nn_acc, double nn_time) {
                 correct_masked[ki]++;
         }
     }
+    free(votes);
 
     double t1 = now_sec();
 
@@ -1641,6 +1853,8 @@ static void test_combined(double nn_acc, double nn_time) {
 
     int correct_combo[2] = {0};
     double t2 = now_sec();
+    votes = calloc(TRAIN_N, sizeof(uint16_t));
+    if (!votes) { fprintf(stderr, "ERROR: votes alloc failed\n"); exit(1); }
 
     for (int i = 0; i < TEST_N; i++) {
         const uint8_t *qsig = test_sigs + (size_t)i * SIG_PAD;
@@ -1648,8 +1862,7 @@ static void test_combined(double nn_acc, double nn_time) {
         const int8_t *query_sdf = sdf_tern_test + (size_t)i * PADDED;
 
         /* Standard pixel vote (unmasked) */
-        uint16_t votes[TRAIN_N];
-        memset(votes, 0, sizeof(votes));
+        memset(votes, 0, TRAIN_N * sizeof(uint16_t));
         for (int k = 0; k < N_BLOCKS; k++) {
             uint8_t bv = qsig[k];
             if (bv == 0) continue;
@@ -1687,6 +1900,7 @@ static void test_combined(double nn_acc, double nn_time) {
                 correct_combo[ki]++;
         }
     }
+    free(votes);
 
     double t3 = now_sec();
 
@@ -1698,6 +1912,902 @@ static void test_combined(double nn_acc, double nn_time) {
                (acc - nn_acc) * 100.0);
     }
     printf("  Time: %.2f sec\n", t3 - t2);
+}
+
+/* ================================================================
+ *  Test H: Gradient-Enhanced SDF & TST
+ *
+ *  Hypothesis: feeding gradient ternary images (edge direction)
+ *  through SDF (distance transform) captures corners & junctions.
+ *  Adding gradient hot maps and gradient-SDF hot maps should improve
+ *  classification. Multi-channel TST should capture orientation.
+ * ================================================================ */
+
+static void test_gradient_sdf(void) {
+    /* ---- H1: Gradient Hot Maps (direct, no SDF) ---- */
+    printf("  --- H1: Gradient Hot Maps ---\n");
+    printf("  H-Grad and V-Grad ternary fed through same hot map cipher.\n");
+    printf("  Background skip: bv=%d (block_encode(0,0,0) = flat region)\n\n",
+           BG_GRAD);
+
+    build_hot_map_gen(hg_train_sigs, TRAIN_N, hg_hot_map);
+    build_hot_map_gen(vg_train_sigs, TRAIN_N, vg_hot_map);
+
+    int correct_hg = 0, correct_vg = 0, correct_3chan = 0;
+    for (int i = 0; i < TEST_N; i++) {
+        const uint8_t *px_sig = test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *hg_sig = hg_test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *vg_sig = vg_test_sigs + (size_t)i * SIG_PAD;
+
+        if (hot_classify_gen(hg_sig, hg_hot_map, BG_GRAD) == test_labels[i])
+            correct_hg++;
+        if (hot_classify_gen(vg_sig, vg_hot_map, BG_GRAD) == test_labels[i])
+            correct_vg++;
+
+        /* 3-channel combined: pixel + h-grad + v-grad */
+        __m256i acc_lo = _mm256_setzero_si256();
+        __m256i acc_hi = _mm256_setzero_si256();
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv;
+            bv = px_sig[k];
+            if (bv != 0) {
+                acc_lo = _mm256_add_epi32(acc_lo,
+                    _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+                acc_hi = _mm256_add_epi32(acc_hi,
+                    _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+            }
+            bv = hg_sig[k];
+            if (bv != BG_GRAD) {
+                acc_lo = _mm256_add_epi32(acc_lo,
+                    _mm256_load_si256((const __m256i *)hg_hot_map[k][bv]));
+                acc_hi = _mm256_add_epi32(acc_hi,
+                    _mm256_load_si256((const __m256i *)hg_hot_map[k][bv] + 1));
+            }
+            bv = vg_sig[k];
+            if (bv != BG_GRAD) {
+                acc_lo = _mm256_add_epi32(acc_lo,
+                    _mm256_load_si256((const __m256i *)vg_hot_map[k][bv]));
+                acc_hi = _mm256_add_epi32(acc_hi,
+                    _mm256_load_si256((const __m256i *)vg_hot_map[k][bv] + 1));
+            }
+        }
+        uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+        _mm256_store_si256((__m256i *)cv, acc_lo);
+        _mm256_store_si256((__m256i *)(cv + 8), acc_hi);
+        int best = 0;
+        for (int c = 1; c < N_CLASSES; c++)
+            if (cv[c] > cv[best]) best = c;
+        if (best == test_labels[i]) correct_3chan++;
+    }
+
+    printf("  H-Grad hot map:            %.2f%%\n",
+           100.0 * correct_hg / TEST_N);
+    printf("  V-Grad hot map:            %.2f%%\n",
+           100.0 * correct_vg / TEST_N);
+    printf("  Pixel+H-Grad+V-Grad:       %.2f%% (vs pixel 71.12%%: %+.2f pp)\n\n",
+           100.0 * correct_3chan / TEST_N,
+           100.0 * correct_3chan / TEST_N - 71.12);
+
+    /* ---- H2: Gradient-SDF Hot Maps ---- */
+    printf("  --- H2: Gradient-SDF Hot Maps ---\n");
+    printf("  SDF of gradient ternary: boundaries = where edge direction changes\n");
+    printf("  = corners, junctions, endpoints\n\n");
+
+    /* Process H-Grad SDF */
+    int8_t *gsdf_raw   = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+    int8_t *gsdf_tern  = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+    uint8_t *gsdf_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
+    int8_t *gsdf_raw_t  = (int8_t *)aligned_alloc(32, (size_t)TEST_N * PADDED);
+    int8_t *gsdf_tern_t = (int8_t *)aligned_alloc(32, (size_t)TEST_N * PADDED);
+    hg_sdf_test_sigs = (uint8_t *)aligned_alloc(32, (size_t)TEST_N * SIG_PAD);
+    vg_sdf_test_sigs = (uint8_t *)aligned_alloc(32, (size_t)TEST_N * SIG_PAD);
+    if (!gsdf_raw || !gsdf_tern || !gsdf_sigs || !gsdf_raw_t ||
+        !gsdf_tern_t || !hg_sdf_test_sigs || !vg_sdf_test_sigs) {
+        fprintf(stderr, "ERROR: gradient-SDF alloc failed\n"); exit(1);
+    }
+
+    /* Helper: sweep threshold and bg_val for a gradient-SDF channel */
+    /* For each (T, bg_val) combo, find best accuracy */
+    int thresholds[] = {1, 2, 3, 4};
+    /* Background candidates: 0=(-1,-1,-1), 13=(0,0,0), 26=(+1,+1,+1) */
+    uint8_t bg_candidates[] = {0, 13, 26};
+    int n_bg = 3;
+    const char *bg_names[] = {"bv=0", "bv=13", "bv=26"};
+
+    /* --- H-Grad SDF --- */
+    printf("  H-Grad SDF (sweep T × background skip):\n");
+
+    double best_hg_sdf_acc = 0;
+    int best_hg_t = 2;
+    uint8_t best_hg_bg = 13;
+
+    for (int i = 0; i < TRAIN_N; i++)
+        compute_edge_sdf(hgrad_train + (size_t)i * PADDED,
+                         gsdf_raw + (size_t)i * PADDED);
+    for (int i = 0; i < TEST_N; i++)
+        compute_edge_sdf(hgrad_test + (size_t)i * PADDED,
+                         gsdf_raw_t + (size_t)i * PADDED);
+
+    /* Print trit distribution at T=2 for diagnosis */
+    {
+        for (int i = 0; i < TRAIN_N; i++)
+            quantize_sdf_one(gsdf_raw + (size_t)i * PADDED,
+                             gsdf_tern + (size_t)i * PADDED, 2);
+        long neg = 0, zero = 0, pos = 0;
+        for (size_t j = 0; j < (size_t)TRAIN_N * PIXELS; j++) {
+            if (gsdf_tern[j] < 0) neg++;
+            else if (gsdf_tern[j] > 0) pos++;
+            else zero++;
+        }
+        long tot = (long)TRAIN_N * PIXELS;
+        printf("  Trit dist (T=2): -1=%.1f%% 0=%.1f%% +1=%.1f%%\n",
+               100.0*neg/tot, 100.0*zero/tot, 100.0*pos/tot);
+    }
+
+    printf("  %-4s | %-6s | %-10s\n", "T", "BG", "Accuracy");
+    printf("  -----+--------+-----------\n");
+
+    for (int ti = 0; ti < 4; ti++) {
+        int T = thresholds[ti];
+        for (int i = 0; i < TRAIN_N; i++)
+            quantize_sdf_one(gsdf_raw + (size_t)i * PADDED,
+                             gsdf_tern + (size_t)i * PADDED, T);
+        for (int i = 0; i < TEST_N; i++)
+            quantize_sdf_one(gsdf_raw_t + (size_t)i * PADDED,
+                             gsdf_tern_t + (size_t)i * PADDED, T);
+
+        compute_sdf_sigs_from(gsdf_tern, gsdf_sigs, TRAIN_N);
+        uint8_t *test_gsdf_sigs = (uint8_t *)aligned_alloc(32,
+            (size_t)TEST_N * SIG_PAD);
+        compute_sdf_sigs_from(gsdf_tern_t, test_gsdf_sigs, TEST_N);
+
+        uint32_t tmp_hot[N_BLOCKS][N_BVALS][CLS_PAD] __attribute__((aligned(32)));
+        build_hot_map_gen(gsdf_sigs, TRAIN_N, tmp_hot);
+
+        for (int bi = 0; bi < n_bg; bi++) {
+            uint8_t bg = bg_candidates[bi];
+            int correct = 0;
+            for (int i = 0; i < TEST_N; i++) {
+                if (hot_classify_gen(test_gsdf_sigs + (size_t)i * SIG_PAD,
+                                     tmp_hot, bg) == test_labels[i])
+                    correct++;
+            }
+            double acc = (double)correct / TEST_N;
+            printf("  %3d  | %-6s | %7.2f%%\n", T, bg_names[bi], acc * 100.0);
+
+            if (acc > best_hg_sdf_acc) {
+                best_hg_sdf_acc = acc;
+                best_hg_t = T;
+                best_hg_bg = bg;
+                memcpy(hg_sdf_hot, tmp_hot, sizeof(tmp_hot));
+                memcpy(hg_sdf_test_sigs, test_gsdf_sigs,
+                       (size_t)TEST_N * SIG_PAD);
+            }
+        }
+        free(test_gsdf_sigs);
+    }
+    printf("  Best H-Grad SDF: T=%d bg=%s → %.2f%%\n\n",
+           best_hg_t, best_hg_bg == 0 ? "bv=0" : best_hg_bg == 13 ? "bv=13" : "bv=26",
+           best_hg_sdf_acc * 100.0);
+
+    /* --- V-Grad SDF --- */
+    printf("  V-Grad SDF (sweep T × background skip):\n");
+
+    double best_vg_sdf_acc = 0;
+    int best_vg_t = 2;
+    uint8_t best_vg_bg = 13;
+
+    for (int i = 0; i < TRAIN_N; i++)
+        compute_edge_sdf(vgrad_train + (size_t)i * PADDED,
+                         gsdf_raw + (size_t)i * PADDED);
+    for (int i = 0; i < TEST_N; i++)
+        compute_edge_sdf(vgrad_test + (size_t)i * PADDED,
+                         gsdf_raw_t + (size_t)i * PADDED);
+
+    /* Trit distribution diagnosis */
+    {
+        for (int i = 0; i < TRAIN_N; i++)
+            quantize_sdf_one(gsdf_raw + (size_t)i * PADDED,
+                             gsdf_tern + (size_t)i * PADDED, 2);
+        long neg = 0, zero = 0, pos = 0;
+        for (size_t j = 0; j < (size_t)TRAIN_N * PIXELS; j++) {
+            if (gsdf_tern[j] < 0) neg++;
+            else if (gsdf_tern[j] > 0) pos++;
+            else zero++;
+        }
+        long tot = (long)TRAIN_N * PIXELS;
+        printf("  Trit dist (T=2): -1=%.1f%% 0=%.1f%% +1=%.1f%%\n",
+               100.0*neg/tot, 100.0*zero/tot, 100.0*pos/tot);
+    }
+
+    printf("  %-4s | %-6s | %-10s\n", "T", "BG", "Accuracy");
+    printf("  -----+--------+-----------\n");
+
+    for (int ti = 0; ti < 4; ti++) {
+        int T = thresholds[ti];
+        for (int i = 0; i < TRAIN_N; i++)
+            quantize_sdf_one(gsdf_raw + (size_t)i * PADDED,
+                             gsdf_tern + (size_t)i * PADDED, T);
+        for (int i = 0; i < TEST_N; i++)
+            quantize_sdf_one(gsdf_raw_t + (size_t)i * PADDED,
+                             gsdf_tern_t + (size_t)i * PADDED, T);
+
+        compute_sdf_sigs_from(gsdf_tern, gsdf_sigs, TRAIN_N);
+        uint8_t *test_gsdf_sigs = (uint8_t *)aligned_alloc(32,
+            (size_t)TEST_N * SIG_PAD);
+        compute_sdf_sigs_from(gsdf_tern_t, test_gsdf_sigs, TEST_N);
+
+        uint32_t tmp_hot[N_BLOCKS][N_BVALS][CLS_PAD] __attribute__((aligned(32)));
+        build_hot_map_gen(gsdf_sigs, TRAIN_N, tmp_hot);
+
+        for (int bi = 0; bi < n_bg; bi++) {
+            uint8_t bg = bg_candidates[bi];
+            int correct = 0;
+            for (int i = 0; i < TEST_N; i++) {
+                if (hot_classify_gen(test_gsdf_sigs + (size_t)i * SIG_PAD,
+                                     tmp_hot, bg) == test_labels[i])
+                    correct++;
+            }
+            double acc = (double)correct / TEST_N;
+            printf("  %3d  | %-6s | %7.2f%%\n", T, bg_names[bi], acc * 100.0);
+
+            if (acc > best_vg_sdf_acc) {
+                best_vg_sdf_acc = acc;
+                best_vg_t = T;
+                best_vg_bg = bg;
+                memcpy(vg_sdf_hot, tmp_hot, sizeof(tmp_hot));
+                memcpy(vg_sdf_test_sigs, test_gsdf_sigs,
+                       (size_t)TEST_N * SIG_PAD);
+            }
+        }
+        free(test_gsdf_sigs);
+    }
+    printf("  Best V-Grad SDF: T=%d bg=%s → %.2f%%\n\n",
+           best_vg_t, best_vg_bg == 0 ? "bv=0" : best_vg_bg == 13 ? "bv=13" : "bv=26",
+           best_vg_sdf_acc * 100.0);
+
+    /* Free temporary SDF buffers */
+    free(gsdf_raw); free(gsdf_tern); free(gsdf_sigs);
+    free(gsdf_raw_t); free(gsdf_tern_t);
+
+    /* ---- H3: Full Ensemble ---- */
+    printf("  --- H3: Full Ensemble ---\n");
+    printf("  Pixel + Pixel-SDF + H-Grad-SDF + V-Grad-SDF (4 ciphers)\n\n");
+
+    /* Need pixel SDF test sigs — rebuild if freed */
+    /* test_sdf_cipher frees raw SDF but keeps sdf_test_sigs alive */
+    int correct_dual = 0, correct_4way = 0;
+    int correct_px_3grad = 0;
+    for (int i = 0; i < TEST_N; i++) {
+        const uint8_t *px_sig = test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *sdf_sig = sdf_test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *hgsdf_sig = hg_sdf_test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *vgsdf_sig = vg_sdf_test_sigs + (size_t)i * SIG_PAD;
+
+        __m256i acc_lo = _mm256_setzero_si256();
+        __m256i acc_hi = _mm256_setzero_si256();
+
+        /* Pixel hot map */
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = px_sig[k];
+            if (bv == 0) continue;
+            acc_lo = _mm256_add_epi32(acc_lo,
+                _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+            acc_hi = _mm256_add_epi32(acc_hi,
+                _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+        }
+
+        /* Snapshot after pixel (for dual comparison) */
+        __m256i dual_lo = acc_lo, dual_hi = acc_hi;
+
+        /* Pixel SDF hot map */
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = sdf_sig[k];
+            if (bv == 0) continue;
+            acc_lo = _mm256_add_epi32(acc_lo,
+                _mm256_load_si256((const __m256i *)sdf_hot_map[k][bv]));
+            acc_hi = _mm256_add_epi32(acc_hi,
+                _mm256_load_si256((const __m256i *)sdf_hot_map[k][bv] + 1));
+            dual_lo = _mm256_add_epi32(dual_lo,
+                _mm256_load_si256((const __m256i *)sdf_hot_map[k][bv]));
+            dual_hi = _mm256_add_epi32(dual_hi,
+                _mm256_load_si256((const __m256i *)sdf_hot_map[k][bv] + 1));
+        }
+
+        /* Dual cipher result (pixel + pixel SDF) */
+        {
+            uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *)cv, dual_lo);
+            _mm256_store_si256((__m256i *)(cv + 8), dual_hi);
+            int best = 0;
+            for (int c = 1; c < N_CLASSES; c++)
+                if (cv[c] > cv[best]) best = c;
+            if (best == test_labels[i]) correct_dual++;
+        }
+
+        /* Pixel + 3 gradient SDF channels (no pixel SDF) */
+        __m256i p3g_lo = _mm256_setzero_si256();
+        __m256i p3g_hi = _mm256_setzero_si256();
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = px_sig[k];
+            if (bv != 0) {
+                p3g_lo = _mm256_add_epi32(p3g_lo,
+                    _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+                p3g_hi = _mm256_add_epi32(p3g_hi,
+                    _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+            }
+        }
+
+        /* H-Grad SDF */
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = hgsdf_sig[k];
+            if (bv == 0) continue;
+            acc_lo = _mm256_add_epi32(acc_lo,
+                _mm256_load_si256((const __m256i *)hg_sdf_hot[k][bv]));
+            acc_hi = _mm256_add_epi32(acc_hi,
+                _mm256_load_si256((const __m256i *)hg_sdf_hot[k][bv] + 1));
+            p3g_lo = _mm256_add_epi32(p3g_lo,
+                _mm256_load_si256((const __m256i *)hg_sdf_hot[k][bv]));
+            p3g_hi = _mm256_add_epi32(p3g_hi,
+                _mm256_load_si256((const __m256i *)hg_sdf_hot[k][bv] + 1));
+        }
+
+        /* V-Grad SDF */
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = vgsdf_sig[k];
+            if (bv == 0) continue;
+            acc_lo = _mm256_add_epi32(acc_lo,
+                _mm256_load_si256((const __m256i *)vg_sdf_hot[k][bv]));
+            acc_hi = _mm256_add_epi32(acc_hi,
+                _mm256_load_si256((const __m256i *)vg_sdf_hot[k][bv] + 1));
+            p3g_lo = _mm256_add_epi32(p3g_lo,
+                _mm256_load_si256((const __m256i *)vg_sdf_hot[k][bv]));
+            p3g_hi = _mm256_add_epi32(p3g_hi,
+                _mm256_load_si256((const __m256i *)vg_sdf_hot[k][bv] + 1));
+        }
+
+        /* 4-way ensemble (pixel + pixel SDF + hg SDF + vg SDF) */
+        {
+            uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *)cv, acc_lo);
+            _mm256_store_si256((__m256i *)(cv + 8), acc_hi);
+            int best = 0;
+            for (int c = 1; c < N_CLASSES; c++)
+                if (cv[c] > cv[best]) best = c;
+            if (best == test_labels[i]) correct_4way++;
+        }
+
+        /* Pixel + H-Grad-SDF + V-Grad-SDF (3-way, no pixel SDF) */
+        {
+            uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *)cv, p3g_lo);
+            _mm256_store_si256((__m256i *)(cv + 8), p3g_hi);
+            int best = 0;
+            for (int c = 1; c < N_CLASSES; c++)
+                if (cv[c] > cv[best]) best = c;
+            if (best == test_labels[i]) correct_px_3grad++;
+        }
+    }
+
+    printf("  Dual cipher (pixel + pixel-SDF):     %.2f%%\n",
+           100.0 * correct_dual / TEST_N);
+    printf("  Pixel + H-Grad-SDF + V-Grad-SDF:     %.2f%% (%+.2f pp vs dual)\n",
+           100.0 * correct_px_3grad / TEST_N,
+           100.0 * (correct_px_3grad - correct_dual) / TEST_N);
+    printf("  4-cipher (px + px-SDF + hg-SDF + vg-SDF): %.2f%% (%+.2f pp vs dual)\n\n",
+           100.0 * correct_4way / TEST_N,
+           100.0 * (correct_4way - correct_dual) / TEST_N);
+
+    /* ---- H4: Multi-Channel TST ---- */
+    printf("  --- H4: Multi-Channel TST ---\n");
+    printf("  Combined TST score = pixel_tst + hg_tst + vg_tst\n\n");
+
+    int k2_vals[] = {10, 50, 200};
+    int n_k2 = 3;
+    int correct_px_tst[3] = {0};
+    int correct_mc_tst[3] = {0};
+    int correct_mr_px = 0, correct_mr_mc = 0;
+
+    double t0 = now_sec();
+    uint16_t *votes = calloc(TRAIN_N, sizeof(uint16_t));
+    if (!votes) { fprintf(stderr, "ERROR: votes alloc failed\n"); exit(1); }
+    for (int i = 0; i < TEST_N; i++) {
+        const uint8_t *qsig = test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *qhg  = hg_test_sigs + (size_t)i * SIG_PAD;
+        const uint8_t *qvg  = vg_test_sigs + (size_t)i * SIG_PAD;
+        const int8_t *query = tern_test + (size_t)i * PADDED;
+
+        /* Stage 1: Vote via inverted index (pixel only) */
+        memset(votes, 0, TRAIN_N * sizeof(uint16_t));
+        for (int k = 0; k < N_BLOCKS; k++) {
+            uint8_t bv = qsig[k];
+            if (bv == 0) continue;
+            uint32_t off = idx_off[k][bv];
+            uint16_t sz = idx_sz[k][bv];
+            const uint32_t *ids = idx_pool + off;
+            for (uint16_t j = 0; j < sz; j++)
+                votes[ids[j]]++;
+        }
+
+        /* Top-K1 */
+        candidate_t cands[TST_K1];
+        int nc = select_top_k(votes, TRAIN_N, cands, TST_K1);
+
+        /* Stage 2: Multi-res scoring */
+        for (int j = 0; j < nc; j++) {
+            uint32_t cid = cands[j].id;
+            const uint8_t *csig = train_sigs + (size_t)cid * SIG_PAD;
+            int32_t px_score = tst_multi_res_score(qsig, csig);
+
+            /* Gradient multi-res scores */
+            const uint8_t *chg = hg_train_sigs + (size_t)cid * SIG_PAD;
+            const uint8_t *cvg = vg_train_sigs + (size_t)cid * SIG_PAD;
+            int32_t hg_score = tst_multi_res_score(qhg, chg);
+            int32_t vg_score = tst_multi_res_score(qvg, cvg);
+
+            cands[j].dot = px_score + hg_score + vg_score;
+            cands[j].votes = (uint16_t)px_score;  /* stash pixel-only */
+        }
+
+        /* Multi-res only classification: pixel-only vs multi-channel */
+        {
+            int32_t best_px = -1, best_mc = -1;
+            uint32_t best_px_id = cands[0].id, best_mc_id = cands[0].id;
+            for (int j = 0; j < nc; j++) {
+                if ((int32_t)cands[j].votes > best_px) {
+                    best_px = (int32_t)cands[j].votes;
+                    best_px_id = cands[j].id;
+                }
+                if (cands[j].dot > best_mc) {
+                    best_mc = cands[j].dot;
+                    best_mc_id = cands[j].id;
+                }
+            }
+            if (train_labels[best_px_id] == test_labels[i]) correct_mr_px++;
+            if (train_labels[best_mc_id] == test_labels[i]) correct_mr_mc++;
+        }
+
+        /* Sort by multi-channel TST score descending */
+        qsort(cands, (size_t)nc, sizeof(candidate_t), cmp_dots_desc);
+
+        /* Stage 3: Dot product on top survivors */
+        int max_k2 = k2_vals[n_k2 - 1];
+        int ek = (nc < max_k2) ? nc : max_k2;
+        for (int j = 0; j < ek; j++) {
+            const int8_t *ref = tern_train + (size_t)cands[j].id * PADDED;
+            cands[j].dot = ternary_dot(query, ref);
+        }
+
+        /* Pixel-only TST scores for comparison (re-sort by votes=px_score) */
+        /* Save multi-channel dot results first */
+        int32_t mc_dots[200];
+        uint32_t mc_ids[200];
+        for (int j = 0; j < ek && j < 200; j++) {
+            mc_dots[j] = cands[j].dot;
+            mc_ids[j] = cands[j].id;
+        }
+
+        /* Re-sort by pixel-only TST score for pixel-only cascade */
+        /* Use votes field which has pixel-only score */
+        for (int j = 0; j < nc; j++)
+            cands[j].dot = (int32_t)cands[j].votes;
+        qsort(cands, (size_t)nc, sizeof(candidate_t), cmp_dots_desc);
+
+        /* Pixel-only dot products */
+        int ek_px = (nc < max_k2) ? nc : max_k2;
+        for (int j = 0; j < ek_px; j++) {
+            const int8_t *ref = tern_train + (size_t)cands[j].id * PADDED;
+            cands[j].dot = ternary_dot(query, ref);
+        }
+
+        /* Evaluate pixel-only TST */
+        for (int ki = 0; ki < n_k2; ki++) {
+            int kv = k2_vals[ki];
+            int ek2 = (ek_px < kv) ? ek_px : kv;
+            int32_t best_d = cands[0].dot;
+            uint32_t best_id = cands[0].id;
+            for (int j = 1; j < ek2; j++) {
+                if (cands[j].dot > best_d) {
+                    best_d = cands[j].dot;
+                    best_id = cands[j].id;
+                }
+            }
+            if (train_labels[best_id] == test_labels[i])
+                correct_px_tst[ki]++;
+        }
+
+        /* Evaluate multi-channel TST (use mc_dots/mc_ids) */
+        for (int ki = 0; ki < n_k2; ki++) {
+            int kv = k2_vals[ki];
+            int ek2 = (ek < kv) ? ek : kv;
+            int32_t best_d = mc_dots[0];
+            uint32_t best_id = mc_ids[0];
+            for (int j = 1; j < ek2; j++) {
+                if (mc_dots[j] > best_d) {
+                    best_d = mc_dots[j];
+                    best_id = mc_ids[j];
+                }
+            }
+            if (train_labels[best_id] == test_labels[i])
+                correct_mc_tst[ki]++;
+        }
+
+        if ((i + 1) % 2000 == 0)
+            fprintf(stderr, "  TST H4: %d/%d\r", i + 1, TEST_N);
+    }
+    fprintf(stderr, "\n");
+    free(votes);
+    double t1 = now_sec();
+
+    printf("  Multi-res only (pixel):       %.2f%%\n",
+           100.0 * correct_mr_px / TEST_N);
+    printf("  Multi-res only (3-channel):   %.2f%% (%+.2f pp)\n\n",
+           100.0 * correct_mr_mc / TEST_N,
+           100.0 * (correct_mr_mc - correct_mr_px) / TEST_N);
+
+    printf("  %-6s | %-14s | %-14s | %-8s\n",
+           "K2", "Pixel TST", "3-Chan TST", "Delta");
+    printf("  -------+----------------+----------------+---------\n");
+    for (int ki = 0; ki < n_k2; ki++) {
+        double px = 100.0 * correct_px_tst[ki] / TEST_N;
+        double mc = 100.0 * correct_mc_tst[ki] / TEST_N;
+        printf("  %5d  | %10.2f%%   | %10.2f%%   | %+.2f pp\n",
+               k2_vals[ki], px, mc, mc - px);
+    }
+    printf("\n  Time: %.2f sec\n", t1 - t0);
+
+    /* ---- H5: Gradient-of-SDF (boundary normal field) ---- */
+    printf("\n  --- H5: Gradient-of-SDF (Boundary Normal Field) ---\n");
+    printf("  Compute h-grad and v-grad of raw pixel-SDF image.\n");
+    printf("  SDF gradient = boundary normal direction.\n");
+    printf("  Non-zero only near edges. Direction encodes boundary shape.\n\n");
+
+    {
+        /* Compute gradients of raw SDF */
+        int8_t *sdf_hg_train = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+        int8_t *sdf_vg_train = (int8_t *)aligned_alloc(32, (size_t)TRAIN_N * PADDED);
+        int8_t *sdf_hg_test  = (int8_t *)aligned_alloc(32, (size_t)TEST_N  * PADDED);
+        int8_t *sdf_vg_test  = (int8_t *)aligned_alloc(32, (size_t)TEST_N  * PADDED);
+        if (!sdf_hg_train || !sdf_vg_train || !sdf_hg_test || !sdf_vg_test) {
+            fprintf(stderr, "ERROR: gradient-of-SDF alloc failed\n"); exit(1);
+        }
+
+        /* SDF raw values are int8_t but can be large. Gradients (diff of neighbors)
+           can exceed [-1,+1]. We clamp to trit via clamp_trit. */
+        for (int i = 0; i < TRAIN_N; i++)
+            compute_gradients_one(sdf_raw_train + (size_t)i * PADDED,
+                                  sdf_hg_train  + (size_t)i * PADDED,
+                                  sdf_vg_train  + (size_t)i * PADDED);
+        for (int i = 0; i < TEST_N; i++)
+            compute_gradients_one(sdf_raw_test + (size_t)i * PADDED,
+                                  sdf_hg_test  + (size_t)i * PADDED,
+                                  sdf_vg_test  + (size_t)i * PADDED);
+
+        /* Trit distribution of SDF gradients */
+        {
+            long neg = 0, zero = 0, pos = 0;
+            for (size_t j = 0; j < (size_t)TRAIN_N * PIXELS; j++) {
+                if (sdf_hg_train[j] < 0) neg++;
+                else if (sdf_hg_train[j] > 0) pos++;
+                else zero++;
+            }
+            long tot = (long)TRAIN_N * PIXELS;
+            printf("  SDF H-Grad trit dist: -1=%.1f%% 0=%.1f%% +1=%.1f%%\n",
+                   100.0*neg/tot, 100.0*zero/tot, 100.0*pos/tot);
+        }
+        {
+            long neg = 0, zero = 0, pos = 0;
+            for (size_t j = 0; j < (size_t)TRAIN_N * PIXELS; j++) {
+                if (sdf_vg_train[j] < 0) neg++;
+                else if (sdf_vg_train[j] > 0) pos++;
+                else zero++;
+            }
+            long tot = (long)TRAIN_N * PIXELS;
+            printf("  SDF V-Grad trit dist: -1=%.1f%% 0=%.1f%% +1=%.1f%%\n\n",
+                   100.0*neg/tot, 100.0*zero/tot, 100.0*pos/tot);
+        }
+
+        /* Build block signatures */
+        uint8_t *shg_train_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
+        uint8_t *shg_test_sigs  = (uint8_t *)aligned_alloc(32, (size_t)TEST_N  * SIG_PAD);
+        uint8_t *svg_train_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
+        uint8_t *svg_test_sigs  = (uint8_t *)aligned_alloc(32, (size_t)TEST_N  * SIG_PAD);
+        compute_sdf_sigs_from(sdf_hg_train, shg_train_sigs, TRAIN_N);
+        compute_sdf_sigs_from(sdf_hg_test,  shg_test_sigs,  TEST_N);
+        compute_sdf_sigs_from(sdf_vg_train, svg_train_sigs, TRAIN_N);
+        compute_sdf_sigs_from(sdf_vg_test,  svg_test_sigs,  TEST_N);
+
+        /* Free ternary images, keep only sigs */
+        free(sdf_hg_train); free(sdf_vg_train);
+        free(sdf_hg_test);  free(sdf_vg_test);
+
+        /* Sweep background skip for each channel */
+        uint32_t shg_hot[N_BLOCKS][N_BVALS][CLS_PAD] __attribute__((aligned(32)));
+        uint32_t svg_hot[N_BLOCKS][N_BVALS][CLS_PAD] __attribute__((aligned(32)));
+
+        double best_shg_acc = 0, best_svg_acc = 0;
+        uint8_t best_shg_bg = 13, best_svg_bg = 13;
+
+        /* Build hot maps */
+        build_hot_map_gen(shg_train_sigs, TRAIN_N, shg_hot);
+        build_hot_map_gen(svg_train_sigs, TRAIN_N, svg_hot);
+
+        printf("  %-12s | %-6s | %-10s\n", "Channel", "BG", "Accuracy");
+        printf("  ------------+--------+-----------\n");
+
+        for (int bi = 0; bi < n_bg; bi++) {
+            uint8_t bg = bg_candidates[bi];
+            int correct_shg = 0, correct_svg = 0;
+            for (int i = 0; i < TEST_N; i++) {
+                if (hot_classify_gen(shg_test_sigs + (size_t)i * SIG_PAD,
+                                     shg_hot, bg) == test_labels[i])
+                    correct_shg++;
+                if (hot_classify_gen(svg_test_sigs + (size_t)i * SIG_PAD,
+                                     svg_hot, bg) == test_labels[i])
+                    correct_svg++;
+            }
+            double shg_a = (double)correct_shg / TEST_N;
+            double svg_a = (double)correct_svg / TEST_N;
+            printf("  SDF-H-Grad  | %-6s | %7.2f%%\n", bg_names[bi], shg_a * 100.0);
+            printf("  SDF-V-Grad  | %-6s | %7.2f%%\n", bg_names[bi], svg_a * 100.0);
+            if (shg_a > best_shg_acc) { best_shg_acc = shg_a; best_shg_bg = bg; }
+            if (svg_a > best_svg_acc) { best_svg_acc = svg_a; best_svg_bg = bg; }
+        }
+        printf("\n  Best SDF-H-Grad: bg=%s → %.2f%%\n",
+               best_shg_bg == 0 ? "bv=0" : best_shg_bg == 13 ? "bv=13" : "bv=26",
+               best_shg_acc * 100.0);
+        printf("  Best SDF-V-Grad: bg=%s → %.2f%%\n\n",
+               best_svg_bg == 0 ? "bv=0" : best_svg_bg == 13 ? "bv=13" : "bv=26",
+               best_svg_acc * 100.0);
+
+        /* 3-channel ensemble: pixel + SDF-H-Grad + SDF-V-Grad */
+        int correct_p_shg_svg = 0;
+        for (int i = 0; i < TEST_N; i++) {
+            const uint8_t *px_sig = test_sigs + (size_t)i * SIG_PAD;
+            const uint8_t *shg_sig = shg_test_sigs + (size_t)i * SIG_PAD;
+            const uint8_t *svg_sig = svg_test_sigs + (size_t)i * SIG_PAD;
+
+            __m256i acc_lo = _mm256_setzero_si256();
+            __m256i acc_hi = _mm256_setzero_si256();
+            for (int k = 0; k < N_BLOCKS; k++) {
+                uint8_t bv;
+                bv = px_sig[k];
+                if (bv != 0) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+                }
+                bv = shg_sig[k];
+                if (bv != best_shg_bg) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)shg_hot[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)shg_hot[k][bv] + 1));
+                }
+                bv = svg_sig[k];
+                if (bv != best_svg_bg) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)svg_hot[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)svg_hot[k][bv] + 1));
+                }
+            }
+            uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *)cv, acc_lo);
+            _mm256_store_si256((__m256i *)(cv + 8), acc_hi);
+            int best = 0;
+            for (int c = 1; c < N_CLASSES; c++)
+                if (cv[c] > cv[best]) best = c;
+            if (best == test_labels[i]) correct_p_shg_svg++;
+        }
+        printf("  Pixel + SDF-H-Grad + SDF-V-Grad: %.2f%% (vs pixel 71.12%%: %+.2f pp)\n",
+               100.0 * correct_p_shg_svg / TEST_N,
+               100.0 * correct_p_shg_svg / TEST_N - 71.12);
+
+        /* 5-channel ensemble: pixel + raw H-Grad + raw V-Grad + SDF-H-Grad + SDF-V-Grad */
+        int correct_5chan = 0;
+        for (int i = 0; i < TEST_N; i++) {
+            const uint8_t *px_sig  = test_sigs     + (size_t)i * SIG_PAD;
+            const uint8_t *hg_sig  = hg_test_sigs  + (size_t)i * SIG_PAD;
+            const uint8_t *vg_sig  = vg_test_sigs  + (size_t)i * SIG_PAD;
+            const uint8_t *shg_sig = shg_test_sigs + (size_t)i * SIG_PAD;
+            const uint8_t *svg_sig = svg_test_sigs + (size_t)i * SIG_PAD;
+
+            __m256i acc_lo = _mm256_setzero_si256();
+            __m256i acc_hi = _mm256_setzero_si256();
+            for (int k = 0; k < N_BLOCKS; k++) {
+                uint8_t bv;
+                bv = px_sig[k];
+                if (bv != 0) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+                }
+                bv = hg_sig[k];
+                if (bv != BG_GRAD) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)hg_hot_map[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)hg_hot_map[k][bv] + 1));
+                }
+                bv = vg_sig[k];
+                if (bv != BG_GRAD) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)vg_hot_map[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)vg_hot_map[k][bv] + 1));
+                }
+                bv = shg_sig[k];
+                if (bv != best_shg_bg) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)shg_hot[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)shg_hot[k][bv] + 1));
+                }
+                bv = svg_sig[k];
+                if (bv != best_svg_bg) {
+                    acc_lo = _mm256_add_epi32(acc_lo,
+                        _mm256_load_si256((const __m256i *)svg_hot[k][bv]));
+                    acc_hi = _mm256_add_epi32(acc_hi,
+                        _mm256_load_si256((const __m256i *)svg_hot[k][bv] + 1));
+                }
+            }
+            uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *)cv, acc_lo);
+            _mm256_store_si256((__m256i *)(cv + 8), acc_hi);
+            int best = 0;
+            for (int c = 1; c < N_CLASSES; c++)
+                if (cv[c] > cv[best]) best = c;
+            if (best == test_labels[i]) correct_5chan++;
+        }
+        printf("  5-chan (px+hg+vg+sdf_hg+sdf_vg): %.2f%% (vs pixel 71.12%%: %+.2f pp)\n",
+               100.0 * correct_5chan / TEST_N,
+               100.0 * correct_5chan / TEST_N - 71.12);
+        printf("  (vs 3-chan px+hg+vg 73.13%%: %+.2f pp)\n",
+               100.0 * correct_5chan / TEST_N - 73.13);
+
+        free(shg_train_sigs); free(shg_test_sigs);
+        free(svg_train_sigs); free(svg_test_sigs);
+    }
+
+    /* ---- H6: SDF-Gated Gradient Voting ---- */
+    printf("\n  --- H6: SDF-Gated Gradient Voting ---\n");
+    printf("  Only vote on gradient blocks where pixel-SDF is near boundary.\n");
+    printf("  SDF focuses gradients on structurally important regions.\n\n");
+
+    {
+        /* Use pixel SDF test sigs to gate gradient votes.
+           A block is "near boundary" if its SDF block value contains at least one 0-trit.
+           block_encode: val = (t0+1)*9 + (t1+1)*3 + (t2+1) → range [0,26]
+           All-positive (+1,+1,+1) = 26, contains no 0-trit → far from boundary
+           We'll check: is this block "far from boundary"?
+           Far = all trits are +1 (bv=26) or all trits are -1 (bv=0).
+           Near = contains at least one 0-trit (boundary crossing within block). */
+
+        /* Precompute: which block values contain at least one 0-trit? */
+        int has_zero[N_BVALS];
+        for (int bv = 0; bv < N_BVALS; bv++) {
+            /* Decode block value: bv = (t0+1)*9 + (t1+1)*3 + (t2+1) */
+            int t2 = (bv % 3) - 1;
+            int t1 = ((bv / 3) % 3) - 1;
+            int t0 = ((bv / 9) % 3) - 1;
+            has_zero[bv] = (t0 == 0 || t1 == 0 || t2 == 0);
+        }
+
+        /* For each SDF threshold, gate gradient hot map */
+        int sdf_thresholds[] = {1, 2, 3, 4};
+        printf("  T    | Gated H-Grad | Gated V-Grad | Gated 3-ch  | Blocks used\n");
+        printf("  -----+--------------+--------------+-------------+------------\n");
+
+        for (int ti = 0; ti < 4; ti++) {
+            int T = sdf_thresholds[ti];
+            /* Recompute pixel SDF test sigs at this threshold */
+            int8_t *sdf_tern_buf = (int8_t *)aligned_alloc(32, (size_t)TEST_N * PADDED);
+            uint8_t *sdf_sig_buf = (uint8_t *)aligned_alloc(32, (size_t)TEST_N * SIG_PAD);
+            for (int i = 0; i < TEST_N; i++)
+                quantize_sdf_one(sdf_raw_test + (size_t)i * PADDED,
+                                 sdf_tern_buf + (size_t)i * PADDED, T);
+            compute_sdf_sigs_from(sdf_tern_buf, sdf_sig_buf, TEST_N);
+            free(sdf_tern_buf);
+
+            int correct_ghg = 0, correct_gvg = 0, correct_g3 = 0;
+            long blocks_used = 0, blocks_total = 0;
+
+            for (int i = 0; i < TEST_N; i++) {
+                const uint8_t *px_sig  = test_sigs    + (size_t)i * SIG_PAD;
+                const uint8_t *hg_sig  = hg_test_sigs + (size_t)i * SIG_PAD;
+                const uint8_t *vg_sig  = vg_test_sigs + (size_t)i * SIG_PAD;
+                const uint8_t *ss      = sdf_sig_buf  + (size_t)i * SIG_PAD;
+
+                __m256i hg_lo = _mm256_setzero_si256(), hg_hi = _mm256_setzero_si256();
+                __m256i vg_lo = _mm256_setzero_si256(), vg_hi = _mm256_setzero_si256();
+                __m256i a3_lo = _mm256_setzero_si256(), a3_hi = _mm256_setzero_si256();
+
+                for (int k = 0; k < N_BLOCKS; k++) {
+                    int near_boundary = has_zero[ss[k]];
+                    blocks_total++;
+
+                    /* Pixel always votes (ungated) */
+                    uint8_t bv = px_sig[k];
+                    if (bv != 0) {
+                        a3_lo = _mm256_add_epi32(a3_lo,
+                            _mm256_load_si256((const __m256i *)hot_map[k][bv]));
+                        a3_hi = _mm256_add_epi32(a3_hi,
+                            _mm256_load_si256((const __m256i *)hot_map[k][bv] + 1));
+                    }
+
+                    if (!near_boundary) continue;
+                    blocks_used++;
+
+                    /* Gated gradient votes */
+                    bv = hg_sig[k];
+                    if (bv != BG_GRAD) {
+                        hg_lo = _mm256_add_epi32(hg_lo,
+                            _mm256_load_si256((const __m256i *)hg_hot_map[k][bv]));
+                        hg_hi = _mm256_add_epi32(hg_hi,
+                            _mm256_load_si256((const __m256i *)hg_hot_map[k][bv] + 1));
+                        a3_lo = _mm256_add_epi32(a3_lo,
+                            _mm256_load_si256((const __m256i *)hg_hot_map[k][bv]));
+                        a3_hi = _mm256_add_epi32(a3_hi,
+                            _mm256_load_si256((const __m256i *)hg_hot_map[k][bv] + 1));
+                    }
+                    bv = vg_sig[k];
+                    if (bv != BG_GRAD) {
+                        vg_lo = _mm256_add_epi32(vg_lo,
+                            _mm256_load_si256((const __m256i *)vg_hot_map[k][bv]));
+                        vg_hi = _mm256_add_epi32(vg_hi,
+                            _mm256_load_si256((const __m256i *)vg_hot_map[k][bv] + 1));
+                        a3_lo = _mm256_add_epi32(a3_lo,
+                            _mm256_load_si256((const __m256i *)vg_hot_map[k][bv]));
+                        a3_hi = _mm256_add_epi32(a3_hi,
+                            _mm256_load_si256((const __m256i *)vg_hot_map[k][bv] + 1));
+                    }
+                }
+
+                /* Classify gated H-Grad */
+                uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
+                _mm256_store_si256((__m256i *)cv, hg_lo);
+                _mm256_store_si256((__m256i *)(cv + 8), hg_hi);
+                int best = 0;
+                for (int c = 1; c < N_CLASSES; c++)
+                    if (cv[c] > cv[best]) best = c;
+                if (best == test_labels[i]) correct_ghg++;
+
+                /* Classify gated V-Grad */
+                _mm256_store_si256((__m256i *)cv, vg_lo);
+                _mm256_store_si256((__m256i *)(cv + 8), vg_hi);
+                best = 0;
+                for (int c = 1; c < N_CLASSES; c++)
+                    if (cv[c] > cv[best]) best = c;
+                if (best == test_labels[i]) correct_gvg++;
+
+                /* Classify gated 3-channel */
+                _mm256_store_si256((__m256i *)cv, a3_lo);
+                _mm256_store_si256((__m256i *)(cv + 8), a3_hi);
+                best = 0;
+                for (int c = 1; c < N_CLASSES; c++)
+                    if (cv[c] > cv[best]) best = c;
+                if (best == test_labels[i]) correct_g3++;
+            }
+
+            double pct_used = 100.0 * blocks_used / blocks_total;
+            printf("  %3d  | %9.2f%%   | %9.2f%%   | %8.2f%%   | %.1f%%\n",
+                   T,
+                   100.0 * correct_ghg / TEST_N,
+                   100.0 * correct_gvg / TEST_N,
+                   100.0 * correct_g3 / TEST_N,
+                   pct_used);
+            free(sdf_sig_buf);
+        }
+        printf("\n  Reference (ungated):\n");
+        printf("  H-Grad: 60.43%%  V-Grad: 72.86%%  3-chan: 73.13%%\n");
+    }
+
+    /* Cleanup gradient-SDF test sigs */
+    free(hg_sdf_test_sigs); hg_sdf_test_sigs = NULL;
+    free(vg_sdf_test_sigs); vg_sdf_test_sigs = NULL;
 }
 
 /* ================================================================
@@ -1728,9 +2838,17 @@ int main(void) {
     double t2 = now_sec();
     printf("  Done (%.2f sec)\n\n", t2 - t1);
 
+    /* Compute gradient observers */
+    printf("Computing gradient observers...\n");
+    compute_all_gradients();
+    double t2a = now_sec();
+    printf("  H-grad + V-grad for %d images (%.2f sec)\n\n",
+           TRAIN_N + TEST_N, t2a - t2);
+
     /* Build block index (pre-addressed shape-state-space) */
     printf("Building block index (%d blocks of 3 trits)...\n", N_BLOCKS);
     compute_sigs();
+    compute_grad_sigs();
     build_index();
     double t2b = now_sec();
     print_index_stats();
@@ -1810,11 +2928,25 @@ int main(void) {
     puts("  The SDF tells the pixel where to look.\n");
     test_combined(nn_acc, nn_time);
 
+    /* Test H: Gradient-Enhanced SDF & TST */
+    puts("\n--- Test H: Gradient-Enhanced SDF & TST ---");
+    puts("  Gradients add direction. SDF of gradients detects corners.");
+    puts("  Multi-channel TST adds orientation consistency.\n");
+    test_gradient_sdf();
+
     /* Cleanup SDF data */
+    free(sdf_raw_train);  sdf_raw_train  = NULL;
+    free(sdf_raw_test);   sdf_raw_test   = NULL;
     free(sdf_tern_train); sdf_tern_train = NULL;
     free(sdf_tern_test);  sdf_tern_test  = NULL;
     free(sdf_train_sigs); sdf_train_sigs = NULL;
     free(sdf_test_sigs);  sdf_test_sigs  = NULL;
+
+    /* Cleanup gradient data */
+    free(hgrad_train); free(hgrad_test);
+    free(vgrad_train); free(vgrad_test);
+    free(hg_train_sigs); free(hg_test_sigs);
+    free(vg_train_sigs); free(vg_test_sigs);
 
     /* Noise test */
     test_noise();
@@ -1832,6 +2964,7 @@ int main(void) {
     printf("  TST cascade:           see Test E above\n");
     printf("  SDF cipher:            see Test F above\n");
     printf("  Combined powers:       see Test G above\n");
+    printf("  Gradient-SDF + TST:    see Test H above\n");
 
     /* Verdict */
     puts("\n=== VERDICT ===");

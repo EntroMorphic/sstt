@@ -6,12 +6,15 @@ MNIST_URL   = https://ossci-datasets.s3.amazonaws.com/mnist
 MNIST_FILES = train-images-idx3-ubyte train-labels-idx1-ubyte \
               t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte
 
-all: sstt_mvp sstt_geom
+all: sstt_mvp sstt_geom sstt_v2
 
 sstt_mvp: sstt_mvp.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 sstt_geom: sstt_geom.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+sstt_v2: sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 mnist: $(addprefix data/, $(MNIST_FILES))
@@ -24,7 +27,7 @@ data/%.gz:
 	curl -sS -o $@ $(MNIST_URL)/$*.gz
 
 clean:
-	rm -f sstt_mvp sstt_geom
+	rm -f sstt_mvp sstt_geom sstt_v2
 
 cleanall: clean
 	rm -rf data
