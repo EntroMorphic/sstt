@@ -18,6 +18,9 @@ sstt_geom: sstt_geom.c
 sstt_v2: sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_series: sstt_series.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_ensemble: sstt_ensemble.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
