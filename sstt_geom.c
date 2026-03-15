@@ -106,6 +106,9 @@ static double now_sec(void) {
     return ts.tv_sec + ts.tv_nsec * 1e-9;
 }
 
+/* ---------- Data directory (configurable via argv[1]) ---------- */
+static const char *data_dir = "data/";
+
 /* ---------- Global data ---------- */
 static uint8_t *raw_train_img;     /* [TRAIN_N * PIXELS] */
 static uint8_t *raw_test_img;      /* [TEST_N * PIXELS]  */
@@ -171,7 +174,7 @@ static uint8_t *load_idx(const char *path, uint32_t *count,
     FILE *f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, "ERROR: Cannot open %s\n", path);
-        fprintf(stderr, "  Run 'make mnist' to download MNIST data first.\n");
+        fprintf(stderr, "  Run 'make mnist' or 'make fashion' to download data first.\n");
         exit(1);
     }
 
@@ -221,28 +224,33 @@ static uint8_t *load_idx(const char *path, uint32_t *count,
     return data;
 }
 
-static void load_mnist(void) {
+static void load_data(const char *dir) {
     uint32_t n, r, c;
+    char path[256];
 
-    raw_train_img = load_idx("data/train-images-idx3-ubyte", &n, &r, &c);
+    snprintf(path, sizeof(path), "%strain-images-idx3-ubyte", dir);
+    raw_train_img = load_idx(path, &n, &r, &c);
     if (n != TRAIN_N || r != 28 || c != 28) {
         fprintf(stderr, "ERROR: Unexpected training image dimensions\n");
         exit(1);
     }
 
-    train_labels = load_idx("data/train-labels-idx1-ubyte", &n, NULL, NULL);
+    snprintf(path, sizeof(path), "%strain-labels-idx1-ubyte", dir);
+    train_labels = load_idx(path, &n, NULL, NULL);
     if (n != TRAIN_N) {
         fprintf(stderr, "ERROR: Unexpected training label count\n");
         exit(1);
     }
 
-    raw_test_img = load_idx("data/t10k-images-idx3-ubyte", &n, &r, &c);
+    snprintf(path, sizeof(path), "%st10k-images-idx3-ubyte", dir);
+    raw_test_img = load_idx(path, &n, &r, &c);
     if (n != TEST_N || r != 28 || c != 28) {
         fprintf(stderr, "ERROR: Unexpected test image dimensions\n");
         exit(1);
     }
 
-    test_labels = load_idx("data/t10k-labels-idx1-ubyte", &n, NULL, NULL);
+    snprintf(path, sizeof(path), "%st10k-labels-idx1-ubyte", dir);
+    test_labels = load_idx(path, &n, NULL, NULL);
     if (n != TEST_N) {
         fprintf(stderr, "ERROR: Unexpected test label count\n");
         exit(1);
@@ -964,14 +972,16 @@ static inline int hot_classify(const uint8_t *qsig) {
 }
 
 static void test_hot_map(void) {
+    char hm_path[256];
+    snprintf(hm_path, sizeof(hm_path), "%shot_map.bin", data_dir);
     double tb0 = now_sec();
-    int loaded = load_hot_map("data/hot_map.bin");
+    int loaded = load_hot_map(hm_path);
     if (!loaded) {
         build_hot_map();
-        save_hot_map("data/hot_map.bin");
-        printf("  Built and saved to data/hot_map.bin\n");
+        save_hot_map(hm_path);
+        printf("  Built and saved to %s\n", hm_path);
     } else {
-        printf("  Loaded from data/hot_map.bin (persistent cipher)\n");
+        printf("  Loaded from %s (persistent cipher)\n", hm_path);
     }
     double tb1 = now_sec();
     printf("  Size: %zu KB (L2-resident)\n", sizeof(hot_map) / 1024);
@@ -2814,20 +2824,39 @@ static void test_gradient_sdf(void) {
  *  Main
  * ================================================================ */
 
-int main(void) {
+int main(int argc, char **argv) {
     seed_rng(42);
     double t0 = now_sec();
 
-    puts("=== SSTT Geometric Inference: Ternary MNIST Classification ===");
+    /* Optional data directory from command line */
+    if (argc > 1) {
+        data_dir = argv[1];
+        /* Ensure trailing slash */
+        size_t len = strlen(data_dir);
+        if (len > 0 && data_dir[len - 1] != '/') {
+            char *buf = malloc(len + 2);
+            memcpy(buf, data_dir, len);
+            buf[len] = '/';
+            buf[len + 1] = '\0';
+            data_dir = buf;
+        }
+    }
+
+    /* Derive dataset name from directory for display */
+    const char *dataset_name = "MNIST";
+    if (strstr(data_dir, "fashion"))
+        dataset_name = "Fashion-MNIST";
+
+    printf("=== SSTT Geometric Inference: Ternary %s Classification ===\n", dataset_name);
     puts("");
-    puts("Question: Can ternary lattice geometry separate real digit classes?");
-    puts("Method:   Quantize MNIST to {-1,0,+1}, classify by ternary dot product.");
+    printf("Dataset:  %s (from %s)\n", dataset_name, data_dir);
+    puts("Method:   Quantize to {-1,0,+1}, classify by ternary dot product.");
     puts("          No matrix multiply. No activation functions. Just geometry.");
     puts("");
 
-    /* Load MNIST */
-    printf("Loading MNIST...\n");
-    load_mnist();
+    /* Load data */
+    printf("Loading %s...\n", dataset_name);
+    load_data(data_dir);
     double t1 = now_sec();
     printf("  %d train + %d test images loaded (%.2f sec)\n\n",
            TRAIN_N, TEST_N, t1 - t0);

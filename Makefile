@@ -3,6 +3,7 @@ CFLAGS  = -O3 -mavx2 -mfma -march=native -Wall -Wextra
 LDFLAGS = -lm
 
 MNIST_URL   = https://ossci-datasets.s3.amazonaws.com/mnist
+FASHION_URL = http://fashion-mnist.s3-website.eu-central-1.amazonaws.com
 MNIST_FILES = train-images-idx3-ubyte train-labels-idx1-ubyte \
               t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte
 
@@ -26,10 +27,19 @@ data/%.gz:
 	mkdir -p data
 	curl -sS -o $@ $(MNIST_URL)/$*.gz
 
+fashion: $(addprefix data-fashion/, $(MNIST_FILES))
+
+data-fashion/%: data-fashion/%.gz
+	gunzip -k $<
+
+data-fashion/%.gz:
+	mkdir -p data-fashion
+	curl -sS -o $@ $(FASHION_URL)/$*.gz
+
 clean:
 	rm -f sstt_mvp sstt_geom sstt_v2
 
 cleanall: clean
-	rm -rf data
+	rm -rf data data-fashion
 
-.PHONY: all clean cleanall mnist
+.PHONY: all clean cleanall mnist fashion
