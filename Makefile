@@ -18,6 +18,9 @@ sstt_geom: sstt_geom.c
 sstt_v2: sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_pentary: sstt_pentary.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_softcascade: sstt_softcascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
