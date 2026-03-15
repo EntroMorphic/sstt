@@ -5,6 +5,7 @@ sstt_fused_test
 sstt_fused_test_c
 sstt_fused_test_asm
 sstt_tpca
+sstt_hybrid
 data/
 data-fashion/
 *.o

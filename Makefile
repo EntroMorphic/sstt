@@ -18,6 +18,9 @@ sstt_geom: sstt_geom.c
 sstt_v2: sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_hybrid: sstt_hybrid.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_tpca: sstt_tpca.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
