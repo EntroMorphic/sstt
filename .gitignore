@@ -6,6 +6,7 @@ sstt_fused_test_c
 sstt_fused_test_asm
 sstt_tpca
 sstt_hybrid
+sstt_softcascade
 data/
 data-fashion/
 *.o
