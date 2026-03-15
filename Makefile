@@ -18,6 +18,9 @@ sstt_geom: sstt_geom.c
 sstt_v2: sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_tpca: sstt_tpca.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_fused_test: sstt_fused_test.c sstt_fused_c.c sstt_fused.h
 	$(CC) $(CFLAGS) -o $@ sstt_fused_test.c sstt_fused_c.c $(LDFLAGS)
 
@@ -44,7 +47,7 @@ data-fashion/%.gz:
 	curl -sS -o $@ $(FASHION_URL)/$*.gz
 
 clean:
-	rm -f sstt_mvp sstt_geom sstt_v2 sstt_fused_test
+	rm -f sstt_mvp sstt_geom sstt_v2 sstt_fused_test sstt_tpca
 
 cleanall: clean
 	rm -rf data data-fashion
