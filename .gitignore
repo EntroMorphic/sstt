@@ -2,6 +2,8 @@ sstt_mvp
 sstt_geom
 sstt_v2
 sstt_fused_test
+sstt_fused_test_c
+sstt_fused_test_asm
 data/
 data-fashion/
 *.o
