@@ -57,6 +57,13 @@ Nine experiments (topo through topo9) building a sequential ranking system:
 - Chirality, noise reduction (dead zone/bucket), divergence refinement
   (edge-masked/weighted) all tested and failed — documented as negative results
 - An emerging algorithm pattern: RETRIEVE → FIELD → DECOMPOSE → ASSESS → ACCUMULATE
+- Error profiling: top-10 agreement predicts failure at 100-200x discriminative power
+- Confidence map: 264-entry lookup table eliminates 47% of correctness uncertainty
+  (MNIST), 97.2% accuracy on Fashion's confident 50%
+- Vote-phase routing: 99.89% MNIST / 99.76% Fashion on the easy ~20%, zero ranking
+  cost — the routing decision is a single integer comparison on existing data
+- Gauss map: discrete (hgrad,vgrad,div) joint histogram as structural fingerprint
+- Maps all the way down: every decision converges toward quantized lookup tables
 
 ---
 

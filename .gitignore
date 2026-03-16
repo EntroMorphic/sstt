@@ -39,3 +39,5 @@ data-fashion/
 sstt_error_profile
 sstt_gauss_map
 sstt_gauss_delta
+sstt_confidence_map
+sstt_vote_route

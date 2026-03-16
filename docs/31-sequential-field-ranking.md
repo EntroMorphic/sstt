@@ -310,6 +310,129 @@ that was already in memory.
 | sstt_topo8.c | Grid resolution sweep | 97.27% MNIST (2x4), 84.80% Fashion (3x3) |
 | sstt_topo9.c | Bayesian-CfC sequential | 97.31% MNIST, 85.81% Fashion |
 
+---
+
+## Beyond Ranking: Confidence Maps and Vote-Phase Routing
+
+### Error Profiling (sstt_error_profile.c)
+
+Feature-space autopsy of the remaining errors revealed that the system
+already knows when it will fail — it just doesn't act on the knowledge.
+
+The strongest predictor: **top-10 class agreement** among dot-ranked
+candidates.  On MNIST, 10/10 agreement gives 0.3% error rate; 1-4/10
+agreement gives 40-62% error rate — a 100-200x ratio.
+
+The composite signal `agree >= 8 AND MAD < 20` isolates 71% of all
+MNIST errors into 7% of images.
+
+### Confidence Map (sstt_confidence_map.c)
+
+A 264-entry lookup table on three quantized features (agreement × MAD
+× margin) was tested as a routing mechanism.
+
+**Mutual information:**
+- MNIST: I(Q;Y) = 0.092 bits, **47.3% of uncertainty eliminated**
+- Fashion: I(Q;Y) = 0.177 bits, **30.0% of uncertainty eliminated**
+
+Agreement alone accounts for 41% (MNIST) and 27% (Fashion) of the
+information.  MAD adds 3%. Margin adds <1%.
+
+**Cross-validated precision-coverage (MNIST):**
+
+| Threshold | Coverage | Accuracy |
+|-----------|----------|----------|
+| ≥99% cell acc | 80% | 98.9% |
+| ≥97% | 88% | 98.9% |
+| ≥90% | 93% | 98.7% |
+
+**Cross-validated precision-coverage (Fashion):**
+
+| Threshold | Coverage | Accuracy |
+|-----------|----------|----------|
+| ≥97% cell acc | 50% | **97.2%** |
+| ≥90% | 62% | 96.2% |
+| ≥80% | 73% | 93.7% |
+
+The 97.2% on Fashion's confident subset is the first >97% result on
+Fashion-MNIST in this project.
+
+### Vote-Phase Routing (sstt_vote_route.c)
+
+The confidence signal is available **before ranking** — just count
+class labels of the top-200 candidates (already retrieved by the vote).
+
+**Vote-only routing (no dot products, no topology):**
+
+MNIST:
+- ≥195/200 same class: 18% of images at **99.89%** accuracy
+- ≥190/200: 23% at **99.61%**
+- ≥170/200: 40% at **98.65%**
+
+Fashion:
+- ≥195/200 same class: 16% at **99.76%**
+- ≥190/200: 22% at **99.64%**
+- ≥170/200: 38% at **97.92%**
+
+**99.89% on MNIST and 99.76% on Fashion** on the easy subset — with
+zero ranking computation.  The routing decision is a single integer
+comparison on data already in memory.
+
+This implies a three-tier architecture:
+
+```
+Vote → top-200 → count class labels (FREE)
+  ├─ ≥190/200 → OUTPUT directly (22%, ~99.6% acc)
+  ├─ 150-189  → LIGHT ranking (31%, ~97%)
+  └─ <150     → FULL pipeline (47%, errors concentrate here)
+```
+
+The ranking step (87% of compute) is eliminated entirely for the
+confident majority.
+
+### Gauss Map (sstt_gauss_map.c)
+
+The discrete Gauss map — a 45-bin joint histogram of (hgrad, vgrad,
+divergence) triples — captures the position-invariant distribution of
+the differential field.  First-order (45-bin) and second-order (64-bin
+transition) histograms each contribute modestly.  MNIST combined:
+97.19% (below topo9 because different baseline).
+
+### Ground-State Delta (sstt_gauss_delta.c)
+
+Per-class mean Gauss map histograms as reference frames.  Similarity
+computed on deviations from the candidate's class prototype rather than
+on raw histograms.  Built and ready to test; results pending.
+
+### Maps All The Way Down
+
+The project has converged toward a single architectural principle:
+**every decision is a quantized lookup table.**
+
+- Vote phase: `map[block_signature] → candidate_ids`
+- Hot map: `map[position][value] → class_counts`
+- IG weights: `map[position] → importance`
+- Encoding D: `map[channels] → byte`
+- Confidence: `map[agreement][MAD] → route`
+- Ranking: (the one remaining computation — candidate for future map)
+
+The confidence map and vote-phase routing demonstrate that even the
+ranking step's outcome is predictable from a small quantized feature
+space.  The system's self-knowledge (which images it will classify
+correctly) is itself a mappable quantity.
+
+---
+
+## Files (continued)
+
+| File | Experiment | Key result |
+|------|-----------|------------|
+| sstt_error_profile.c | Feature-space error autopsy | Top-10 agree: 100-200x discriminative power |
+| sstt_gauss_map.c | Discrete Gauss map | 45-bin + 64-bin histograms, 97.19% MNIST |
+| sstt_gauss_delta.c | Ground-state delta encoding | Built, results pending |
+| sstt_confidence_map.c | Quantized confidence map | 47% MI on MNIST, 97.2% on Fashion confident subset |
+| sstt_vote_route.c | Vote-phase free routing | 99.89% MNIST / 99.76% Fashion on easy 20% |
+
 ## Depends On
 
 - Contribution 22: Bytepacked cascade (vote pipeline)
