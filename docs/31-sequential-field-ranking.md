@@ -239,6 +239,12 @@ Every negative result taught something:
 | Curl (MNIST) | -5 to -12 | Rotational structure is redundant with divergence for digits |
 | Hard filtering | -50 vs linear | Hard thresholds can't accommodate within-class variance |
 
+**Caveat:** All negative results are conditioned on the specific search
+space explored (weight ranges, base configuration, and dataset).  A
+feature that hurts at tested weights on top of topo v1 might help in a
+different configuration.  "Failed at tested weights" is accurate;
+"useless for MNIST" is not.
+
 ---
 
 ## The Emerging Algorithm
@@ -354,8 +360,11 @@ information.  MAD adds 3%. Margin adds <1%.
 | ≥90% | 62% | 96.2% |
 | ≥80% | 73% | 93.7% |
 
-The 97.2% on Fashion's confident subset is the first >97% result on
-Fashion-MNIST in this project.
+Note: 97.2% is achieved on the **50% of Fashion images the system
+chose to classify** (the confident subset), not on all of Fashion-MNIST.
+The overall accuracy remains 85.81%.  Any classifier can achieve high
+accuracy by refusing hard examples — the meaningful metric is the full
+precision-coverage curve, not a single point on it.
 
 ### Vote-Phase Routing (sstt_vote_route.c)
 

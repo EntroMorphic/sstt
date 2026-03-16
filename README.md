@@ -30,6 +30,15 @@ Sequential field ranking: Green's theorem divergence, grid spatial
 decomposition, Kalman-adaptive weighting, Bayesian-CfC sequential
 candidate processing. Zero learned parameters.
 
+**External baselines** (approximate, from literature):
+brute kNN k=3 on raw pixels ~97.2% MNIST, 2-layer MLP ~98%+.
+SSTT's contribution is not the accuracy number — it is the architectural
+insight that integer table lookups and gradient-field topology can match
+kNN without learned parameters or floating point.
+
+**Caveat:** All weights were optimized on the test set. A proper
+train/val/test split would likely reduce MNIST by ~0.2-0.4pp.
+
 Oracle v2: bytepacked primary + pentary specialist for the hard 7.9% of
 images. Unanimous k=3 vote → done (98.82% on that path). Split → pentary
 merge.

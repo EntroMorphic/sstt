@@ -58,6 +58,33 @@ see [`archived/README.md`](../archived/README.md) for context.
 | 30 | [Eigenplane generalization (LMM pass)](30-eigenplane-generalization-lmm.md) | Information vs invariance tension; histogram/curl/dot tested |
 | 31 | [Sequential field-theoretic ranking](31-sequential-field-ranking.md) | **97.31% MNIST, 85.81% Fashion** — the emerging algorithm |
 
+## Experiment Files
+
+All experiment source files in `src/`. Each is self-contained.
+
+| File | Experiment | Key finding |
+|------|-----------|-------------|
+| sstt_topo.c | Base topological features | 97.11%: divergence + centroid + profile |
+| sstt_topo2.c | Generalization: div dot, histogram, curl | Only div dot helps Fashion |
+| sstt_topo3.c | Filter-then-rank | Hard filtering loses to soft weighting |
+| sstt_topo4.c | Kalman-adaptive weighting | 97.16%: per-image MAD-based gain |
+| sstt_topo5.c | Divergence refinement | Raw wins over edge-masked / weighted |
+| sstt_topo6.c | Dead zone + bucketing | Kalman already handles noise |
+| sstt_topo7.c | Chirality + quadrant divergence | 97.24%: spatial decomposition helps |
+| sstt_topo8.c | Grid resolution sweep | 97.27%: 2x4 MNIST, 3x3 Fashion |
+| sstt_topo9.c | Bayesian-CfC sequential | 97.31% MNIST, 85.81% Fashion |
+| sstt_error_profile.c | Feature-space error autopsy | Top-10 agree: 100-200x predictor |
+| sstt_gauss_map.c | Discrete Gauss map | 45+64 bin joint histogram |
+| sstt_gauss_delta.c | Ground-state delta encoding | Built, results pending |
+| sstt_confidence_map.c | Quantized confidence map | 47% MI, 97.2% on Fashion confident 50% |
+| sstt_vote_route.c | Vote-phase free routing | 99.6% on easy 22%, zero ranking cost |
+
+## Validation
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 32 | [Red-team validation](32-red-team-validation.md) | Val/test split, 1-NN control, brute kNN baseline, timing, pre-vote MI |
+
 ## Meta
 
 | # | Title |
