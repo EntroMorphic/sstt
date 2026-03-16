@@ -94,6 +94,9 @@ sstt_oracle_v2: $(SRC)/sstt_oracle_v2.c
 sstt_parallel: $(SRC)/sstt_parallel.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_oracle_v3: $(SRC)/sstt_oracle_v3.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 # ----------------------------------------------------------------
 # Fused kernel (C + optional ASM variant)
 # ----------------------------------------------------------------
