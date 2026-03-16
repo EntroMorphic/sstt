@@ -8,6 +8,9 @@ sstt_tpca
 sstt_hybrid
 sstt_softcascade
 sstt_bytecascade
+sstt_tiled
+sstt_diagnose
+sstt_multidot
 data/
 data-fashion/
 *.o

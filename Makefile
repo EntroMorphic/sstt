@@ -24,6 +24,15 @@ sstt_bytepacked: sstt_bytepacked.c
 sstt_bytecascade: sstt_bytecascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_tiled: sstt_tiled.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+sstt_diagnose: sstt_diagnose.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+sstt_multidot: sstt_multidot.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 sstt_pentary: sstt_pentary.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
