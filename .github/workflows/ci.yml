@@ -1,0 +1,44 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build all experiments
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GCC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc make
+
+      - name: Check AVX2 support
+        run: |
+          if grep -q avx2 /proc/cpuinfo; then
+            echo "AVX2: supported"
+          else
+            echo "AVX2: not supported — using Haswell target"
+          fi
+
+      - name: Build core classifiers
+        run: |
+          make sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose \
+               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra"
+
+      - name: Build all experiments
+        run: |
+          make experiments \
+               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra"
+
+      - name: Verify binaries exist
+        run: |
+          for bin in sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose; do
+            test -f "$bin" && echo "OK: $bin" || (echo "MISSING: $bin" && exit 1)
+          done
