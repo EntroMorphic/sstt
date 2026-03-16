@@ -69,7 +69,10 @@ overstated. Routing's value is confidence gating, not speed.
 
 ## P0 #6: Fashion Gauss Map
 
-Still running at time of validation. Results pending.
+**86.02% Fashion** — new best, +0.21pp over Bayesian sequential baseline.
+Combined grid (d=100, c=25, g=50, gm=8, gmt=8, S=50, dS=2, K=15) with
+both first-order (45-bin) and second-order (64-bin) Gauss map histograms.
+Key improvements: 2↔6 pullover/shirt -4, 2↔4 pullover/coat -3.
 
 ## P0 #7: Pre-Vote Difficulty Prediction
 
