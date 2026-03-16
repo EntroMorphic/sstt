@@ -79,6 +79,12 @@ All experiment source files in `src/`. Each is self-contained.
 | sstt_confidence_map.c | Quantized confidence map | 47% MI, 97.2% on Fashion confident 50% |
 | sstt_vote_route.c | Vote-phase free routing | 99.6% on easy 22%, zero ranking cost |
 
+## Next Phase-Changes
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 33 | [Three phase-changes](33-next-phase-changes.md) | Ship router, publish paper, ground-state delta map |
+
 ## Validation
 
 | # | Title | Key Result |
