@@ -87,7 +87,10 @@ static uint8_t *joint_sigs_tr, *joint_sigs_te;
 /* Bytepacked index (vote phase) */
 static uint32_t *joint_hot;
 static uint16_t  ig_weights[N_BLOCKS];
-static uint8_t   nbr_table[BYTE_VALS][8];
+static uint8_t   nbr_table[BYTE_VALS][8];   /* single bit-flip, original order */
+static uint8_t   nbr_reord[BYTE_VALS][8];   /* single bit-flip, px+vg first */
+static uint8_t   nbr_pair [BYTE_VALS][4];   /* pairwise px×vg diagonal probes */
+static uint8_t   nbr_combo[BYTE_VALS][8];   /* 4 pairwise + 4 single px+vg */
 static uint32_t  idx_off[N_BLOCKS][BYTE_VALS];
 static uint16_t  idx_sz [N_BLOCKS][BYTE_VALS];
 static uint32_t *idx_pool;
@@ -227,8 +230,32 @@ static void build_vote_phase(uint8_t bg) {
         raw[k]=h_class-h_cond; if(raw[k]>mx) mx=raw[k];
     }
     for(int k=0;k<N_BLOCKS;k++){ig_weights[k]=mx>0?(uint16_t)(raw[k]/mx*IG_SCALE+0.5):1;if(!ig_weights[k])ig_weights[k]=1;}
-    /* Neighbor table */
+    /* Original neighbor table: bit-flip order 0,1,2,3,4,5,6,7 */
     for(int v=0;v<BYTE_VALS;v++) for(int b=0;b<8;b++) nbr_table[v][b]=(uint8_t)(v^(1<<b));
+
+    /* Reordered: pixel+vgrad bits first {0,1,4,5}, hgrad+trans last {2,3,6,7} */
+    { int ord[]={0,1,4,5,2,3,6,7};
+      for(int v=0;v<BYTE_VALS;v++) for(int i=0;i<8;i++) nbr_reord[v][i]=(uint8_t)(v^(1<<ord[i])); }
+
+    /* Pairwise: jointly change pixel field (bits 0-1) AND vgrad field (bits 4-5).
+     * Encoding D layout: [trans 7-6 | vg 5-4 | hg 3-2 | px 1-0]
+     * 4 diagonal neighbors: (px±1, vg±1) mod 4, hg and trans fixed. */
+    for(int v=0;v<BYTE_VALS;v++){
+        uint8_t px=(uint8_t)(v&0x03), hg=(uint8_t)((v>>2)&0x03);
+        uint8_t vg=(uint8_t)((v>>4)&0x03), tr=(uint8_t)((v>>6)&0x03);
+        uint8_t pxp=(px+1)&0x03, pxm=(px-1)&0x03;
+        uint8_t vgp=(vg+1)&0x03, vgm=(vg-1)&0x03;
+        nbr_pair[v][0]=(uint8_t)((tr<<6)|(vgp<<4)|(hg<<2)|pxp); /* +,+ */
+        nbr_pair[v][1]=(uint8_t)((tr<<6)|(vgm<<4)|(hg<<2)|pxp); /* +,- */
+        nbr_pair[v][2]=(uint8_t)((tr<<6)|(vgp<<4)|(hg<<2)|pxm); /* -,+ */
+        nbr_pair[v][3]=(uint8_t)((tr<<6)|(vgm<<4)|(hg<<2)|pxm); /* -,- */
+    }
+
+    /* Combo: 4 pairwise + 4 single-bit (px+vg) = 8 semantically targeted probes */
+    for(int v=0;v<BYTE_VALS;v++){
+        for(int i=0;i<4;i++) nbr_combo[v][i]  =nbr_pair[v][i];
+        for(int i=0;i<4;i++) nbr_combo[v][4+i]=nbr_reord[v][i]; /* bits 0,1,4,5 */
+    }
     /* Inverted index */
     memset(idx_sz,0,sizeof(idx_sz));
     for(int i=0;i<TRAIN_N;i++){const uint8_t*sig=joint_sigs_tr+(size_t)i*SIG_PAD;for(int k=0;k<N_BLOCKS;k++)if(sig[k]!=bg)idx_sz[k][sig[k]]++;}
@@ -433,6 +460,49 @@ static void print_pair_deltas(const cand_t *pre, const int *nc_arr,
         int d=pairs[i].base-pairs[i].nw;
         printf("    %d\xe2\x86\x92%d:  %d \xe2\x86\x92 %d  (%+d)\n",pairs[i].a,pairs[i].b,pairs[i].base,pairs[i].nw,d);
     }
+}
+
+/* ================================================================
+ *  Generic probe strategy runner
+ *  Runs vote+3-dot precompute with arbitrary probe table, applies
+ *  best dot weights, returns accuracy and wall time.
+ * ================================================================ */
+static int run_strategy(const uint8_t (*tbl)[8], int np, uint8_t bg,
+                         cand_t *pre, int *nc_arr, uint32_t *votes,
+                         int w_px, int w_hg, int w_vg,
+                         double *t_out) {
+    double ts = now_sec();
+    for(int i=0;i<TEST_N;i++){
+        memset(votes,0,TRAIN_N*sizeof(uint32_t));
+        const uint8_t*sig=joint_sigs_te+(size_t)i*SIG_PAD;
+        for(int k=0;k<N_BLOCKS;k++){
+            uint8_t bv=sig[k]; if(bv==bg) continue;
+            uint16_t w=ig_weights[k],wh=w>1?w/2:1;
+            {uint32_t off=idx_off[k][bv];uint16_t sz=idx_sz[k][bv];
+             const uint32_t*ids=idx_pool+off;
+             for(uint16_t j=0;j<sz;j++) votes[ids[j]]+=w;}
+            for(int nb=0;nb<np;nb++){
+                uint8_t nv=tbl[bv][nb]; if(nv==bg) continue;
+                uint32_t noff=idx_off[k][nv];uint16_t nsz=idx_sz[k][nv];
+                const uint32_t*nids=idx_pool+noff;
+                for(uint16_t j=0;j<nsz;j++) votes[nids[j]]+=wh;
+            }
+        }
+        cand_t *row=pre+(size_t)i*TOP_K;
+        int nc=select_top_k(votes,TRAIN_N,row,TOP_K);
+        nc_arr[i]=nc;
+        const int8_t *qp=tern_test+(size_t)i*PADDED;
+        const int8_t *qh=hgrad_test+(size_t)i*PADDED;
+        const int8_t *qv=vgrad_test+(size_t)i*PADDED;
+        for(int j=0;j<nc;j++){
+            uint32_t id=row[j].id;
+            row[j].dot_px=ternary_dot(qp,tern_train+(size_t)id*PADDED);
+            row[j].dot_hg=ternary_dot(qh,hgrad_train+(size_t)id*PADDED);
+            row[j].dot_vg=ternary_dot(qv,vgrad_train+(size_t)id*PADDED);
+        }
+    }
+    *t_out=now_sec()-ts;
+    return run_config(pre,nc_arr,w_px,w_hg,w_vg);
 }
 
 /* ================================================================
@@ -688,6 +758,77 @@ int main(int argc, char **argv) {
      printf("  D. SNR-weighted:          %.2f%%\n", 100.0*run_config(pre,nc_arr,(int)(256*snr[0]/s),(int)(256*snr[1]/s),(int)(256*snr[2]/s))/TEST_N);}
     printf("  E. Grid best (px=256,hg=%d,vg=%d): %.2f%%\n",
            best_whg_grid, best_wvg_grid, 100.0*best_correct/TEST_N);
+    /* ----------------------------------------------------------------
+     * Probe Type Comparison — same budget (4 or 8 probes), different
+     * neighbor selection strategies.
+     * Best dot weights: px=256, hg=0, vg=192 throughout.
+     * ---------------------------------------------------------------- */
+    printf("\n=== Probe Type Comparison (px=256 hg=0 vg=192) ===\n");
+    printf("  %-40s  %-8s  %-10s\n", "Strategy", "Acc%", "Time");
+    printf("  %-40s  %-8s  %-10s\n",
+           "----------------------------------------","--------","----------");
+
+    uint32_t *votes2 = calloc(TRAIN_N, sizeof(uint32_t));
+    double t_strat;
+    int    c_strat;
+
+    /* 1. Original 4 probes: bit-flip order {0,1,2,3} = px+hg */
+    c_strat=run_strategy(nbr_table,4,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec\n",
+           "4-probe original {0,1,2,3} px+hg",100.0*c_strat/TEST_N,t_strat);
+
+    /* 2. Reordered 4 probes: bit-flip order {0,1,4,5} = px+vg  */
+    c_strat=run_strategy(nbr_reord,4,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec\n",
+           "4-probe reordered {0,1,4,5} px+vg",100.0*c_strat/TEST_N,t_strat);
+
+    /* 3. Pairwise 4 probes: diagonal (px±1, vg±1) joint */
+    c_strat=run_strategy(nbr_pair,4,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec\n",
+           "4-probe pairwise (px±1,vg±1) diagonal",100.0*c_strat/TEST_N,t_strat);
+
+    /* 4. Original 8 probes: baseline */
+    c_strat=run_strategy(nbr_table,8,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec  ← current best\n",
+           "8-probe original (baseline)",100.0*c_strat/TEST_N,t_strat);
+
+    /* 5. Reordered 8 probes: px+vg first */
+    c_strat=run_strategy(nbr_reord,8,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec\n",
+           "8-probe reordered px+vg first",100.0*c_strat/TEST_N,t_strat);
+
+    /* 6. Combo 8 probes: 4 pairwise + 4 single px+vg */
+    c_strat=run_strategy(nbr_combo,8,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    printf("  %-40s  %6.2f%%  %6.2f sec\n",
+           "8-probe combo (4 pairwise + 4 single)",100.0*c_strat/TEST_N,t_strat);
+
+    /* Per-pair breakdown on best new strategy */
+    printf("\n--- Per-pair deltas (vs original 8-probe baseline) ---\n");
+    /* Re-run 8-probe to get baseline_preds for this section */
+    { run_strategy(nbr_table,8,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+      for(int i=0;i<TEST_N;i++){
+          int nc=nc_arr[i]; cand_t cands[TOP_K];
+          memcpy(cands,pre+(size_t)i*TOP_K,(size_t)nc*sizeof(cand_t));
+          for(int j=0;j<nc;j++) cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg;
+          qsort(cands,(size_t)nc,sizeof(cand_t),cmp_combined_d);
+          int kv[N_CLASSES]={0}; int k3=nc<3?nc:3;
+          for(int j=0;j<k3;j++) kv[train_labels[cands[j].id]]++;
+          int pred=0; for(int cl=1;cl<N_CLASSES;cl++) if(kv[cl]>kv[pred]) pred=cl;
+          baseline_preds[i]=(uint8_t)pred;
+      }
+    }
+    printf("  Pairwise 4-probe:\n");
+    run_strategy(nbr_pair,4,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    print_pair_deltas(pre,nc_arr,256,0,192,baseline_preds);
+    printf("  Combo 8-probe:\n");
+    run_strategy(nbr_combo,8,bg,pre,nc_arr,votes2,256,0,192,&t_strat);
+    print_pair_deltas(pre,nc_arr,256,0,192,baseline_preds);
+
+    free(votes2);
+
+    printf("\n=== FINAL SUMMARY ===\n");
+    printf("  E. Grid best (8-probe original):       %.2f%%\n", 100.0*best_correct/TEST_N);
+    printf("  See probe type comparison table above.\n");
     printf("\nTotal runtime: %.2f sec\n", now_sec()-t0);
 
     free(pre); free(nc_arr);
