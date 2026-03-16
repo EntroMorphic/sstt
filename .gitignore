@@ -36,3 +36,6 @@ data/
 data-fashion/
 *.o
 .claude/
+sstt_error_profile
+sstt_gauss_map
+sstt_gauss_delta
