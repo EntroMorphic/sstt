@@ -85,6 +85,12 @@ sstt_tiled: $(SRC)/sstt_tiled.c
 sstt_tpca: $(SRC)/sstt_tpca.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+sstt_oracle: $(SRC)/sstt_oracle.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+sstt_oracle_v2: $(SRC)/sstt_oracle_v2.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 # ----------------------------------------------------------------
 # Fused kernel (C + optional ASM variant)
 # ----------------------------------------------------------------
