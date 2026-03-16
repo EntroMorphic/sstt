@@ -85,11 +85,13 @@ static uint16_t idx_sz[N_BLOCKS][N_BVALS];
 /* === Infrastructure (compact) === */
 static uint8_t *load_idx(const char *p,uint32_t *cnt,uint32_t *r,uint32_t *c){
     FILE *f=fopen(p,"rb");if(!f){fprintf(stderr,"ERROR: %s\n",p);exit(1);}
-    uint32_t m,n;fread(&m,4,1,f);fread(&n,4,1,f);m=__builtin_bswap32(m);n=__builtin_bswap32(n);*cnt=n;
+    uint32_t m,n;if(fread(&m,4,1,f)!=1||fread(&n,4,1,f)!=1){fclose(f);exit(1);}
+    m=__builtin_bswap32(m);n=__builtin_bswap32(n);*cnt=n;
     int nd=m&0xFF;size_t is=1;
-    if(nd>=3){uint32_t rr,cc;fread(&rr,4,1,f);fread(&cc,4,1,f);rr=__builtin_bswap32(rr);cc=__builtin_bswap32(cc);if(r)*r=rr;if(c)*c=cc;is=(size_t)rr*cc;}
+    if(nd>=3){uint32_t rr,cc;if(fread(&rr,4,1,f)!=1||fread(&cc,4,1,f)!=1){fclose(f);exit(1);}rr=__builtin_bswap32(rr);cc=__builtin_bswap32(cc);if(r)*r=rr;if(c)*c=cc;is=(size_t)rr*cc;}
     else{if(r)*r=0;if(c)*c=0;}
-    size_t t=(size_t)n*is;uint8_t *d=malloc(t);fread(d,1,t,f);fclose(f);return d;}
+    size_t t=(size_t)n*is;uint8_t *d=malloc(t);if(!d||fread(d,1,t,f)!=t){fclose(f);exit(1);}
+    fclose(f);return d;}
 static void load_data(const char *dir){uint32_t n,r,c;char p[256];
     snprintf(p,256,"%strain-images-idx3-ubyte",dir);raw_train_img=load_idx(p,&n,&r,&c);
     snprintf(p,256,"%strain-labels-idx1-ubyte",dir);train_labels=load_idx(p,&n,NULL,NULL);

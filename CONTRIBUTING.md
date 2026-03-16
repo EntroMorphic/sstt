@@ -6,9 +6,9 @@ This project documents a research progression. Every experiment — including
 failures — is valuable. A clean negative result that rules out an approach
 saves future time. If you add an experiment, document it honestly.
 
-The project follows the **Lincoln Manifold Method**: understand before you
-build. Before writing code, write the hypothesis. After running, record what
-the data actually says, not what you hoped it would say.
+The project follows a hypothesis-driven methodology: state your hypothesis
+before writing code, record what the data says (not what you hoped), and
+document negative results with the same rigor as positive ones.
 
 ## Adding an Experiment
 

@@ -1,9 +1,9 @@
-# Contribution 2: The Hot Map Cipher
+# Contribution 2: The Hot Map — Naive Bayes via Ternary Block Frequencies
 
 ## Concept
 
 A 60 MB inverted index (60K images × 261 blocks × 4 bytes per ID) is
-compressed into a 451 KB frequency table:
+aggregated into a 451 KB frequency table:
 
     hot_map[block_position][block_value][class]  →  uint32 count
 
@@ -64,18 +64,14 @@ static int hot_classify(const uint8_t *qsig) {
 
 ## What Makes It Novel
 
-The hot map is technically a naive Bayes classifier with ternary block
-features. But the contribution is the specific physical realization:
+The hot map is a naive Bayes classifier with ternary block features.
+The contribution is the specific physical realization:
 
 1. **Fixed-size lookup table** — no dynamic allocation, no hash tables
 2. **L2-cache-resident** — the entire "model" lives in fast cache
 3. **Zero branching** — every block contributes the same way (one load + add)
 4. **Background skip** — the one branch (skip bv==0) avoids the dominant
    uninformative bucket, saving ~60% of loads
-
-The name "cipher" reflects its nature: the training data is encoded
-(encrypted) into a frequency table, and classification is decoding
-(decryption) via table lookup.
 
 ## Files
 

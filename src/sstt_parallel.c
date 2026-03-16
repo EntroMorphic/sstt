@@ -121,10 +121,11 @@ static int *g_hist=NULL; static size_t g_hist_cap=0;
  * ================================================================ */
 static uint8_t *load_idx(const char *path,uint32_t *cnt,uint32_t *ro,uint32_t *co){
     FILE*f=fopen(path,"rb"); if(!f){fprintf(stderr,"ERR:%s\n",path);exit(1);}
-    uint32_t m,n; fread(&m,4,1,f); fread(&n,4,1,f);
+    uint32_t m,n; if(fread(&m,4,1,f)!=1||fread(&n,4,1,f)!=1){fclose(f);exit(1);}
     m=__builtin_bswap32(m);n=__builtin_bswap32(n);*cnt=n; size_t s=1;
-    if((m&0xFF)>=3){uint32_t r,c;fread(&r,4,1,f);fread(&c,4,1,f);r=__builtin_bswap32(r);c=__builtin_bswap32(c);if(ro)*ro=r;if(co)*co=c;s=(size_t)r*c;}else{if(ro)*ro=0;if(co)*co=0;}
-    uint8_t*d=malloc((size_t)n*s); fread(d,1,(size_t)n*s,f); fclose(f); return d;
+    if((m&0xFF)>=3){uint32_t r,c;if(fread(&r,4,1,f)!=1||fread(&c,4,1,f)!=1){fclose(f);exit(1);}r=__builtin_bswap32(r);c=__builtin_bswap32(c);if(ro)*ro=r;if(co)*co=c;s=(size_t)r*c;}else{if(ro)*ro=0;if(co)*co=0;}
+    size_t t=(size_t)n*s;uint8_t*d=malloc(t);if(!d||fread(d,1,t,f)!=t){fclose(f);exit(1);}
+    fclose(f); return d;
 }
 static void load_data(void){
     uint32_t n,r,c; char p[256];

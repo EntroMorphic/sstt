@@ -4,6 +4,62 @@ All notable changes to SSTT are documented here. Each entry corresponds to one
 numbered contribution in `docs/`. Accuracy figures are on the MNIST test set
 (10,000 images) unless otherwise noted.
 
+## [0.2.0] — 2026-03-16
+
+Oracle routing, benchmark catalogue, parallel cascade, and project audit.
+
+**[24] Benchmark catalogue**
+SWO analysis of all 13 classifiers. Progressive architecture tree from hot map
+(73%) through cascade (96%). Persistent bottlenecks identified: vote
+accumulation (87% of compute), 4/9 topological confusion (hard floor).
+
+**[25] Multi-specialist oracle** → 96.44%
+Unanimity-gated routing: 92% of images take fast path (98.82% accuracy), 7.9%
+escalate to specialist. Head-to-head ternary vs pentary specialist comparison.
+
+**[oracle v3] Pair-targeted IG re-vote** → 96.37%
+Per-confusion-pair IG re-weighting. Hypothesis partially confirmed: pair-aware
+IG helps 4/9 but the effect is small (+2 images) and pair-unaware cascade
+already captures most of the signal.
+
+**[parallel] Ternary x pentary cascade** → 96.25%
+Parallel pipelines confirm pentary is a search specialist (helps vote phase)
+and ternary is a ranking specialist (helps dot phase).
+
+**[26-27] Audit and remediation**
+Honest assessment of what is novel, useful, fluff, and understated. Archived 5
+docs, rewrote README to lead with headline results, stripped decorative framing.
+
+**[28] Confidence-gated hybrid architecture**
+Extracted from doc 20: the hot-map/cascade spectrum insight, confidence gating
+design, and the finding that IG pre-baking gives only +0.54pp in hot map space.
+
+**[29] Topological ranking** -> 97.11%
+Three topological features augment the cascade's dot-product ranking step:
+gradient divergence (Green's theorem, +43), enclosed-region centroid (+49),
+horizontal profile (+9). Euler failed (binarization too aggressive).
+Divergence operates on the gradient field directly — no binarization.
+
+**[30] Eigenplane generalization (LMM pass)**
+Lincoln Manifold Method applied to the information/invariance tension.
+Predicted divergence histogram, curl, and divergence dot as experiments.
+Histogram and curl failed. Divergence dot helps Fashion only. The LMM
+correctly identified the tension but the resolution came from Kalman
+adaptive weighting, not from the predicted features.
+
+**[31] Sequential field-theoretic ranking** -> **97.31% MNIST, 85.81% Fashion**
+Nine experiments (topo through topo9) building a sequential ranking system:
+- Kalman-adaptive weighting (MAD of candidate divergence as gain): +5 MNIST
+- Grid spatial decomposition (2x4 MNIST, 3x3 Fashion): +11 MNIST, +28 Fashion
+- Bayesian-CfC sequential processing (candidates in quality order with decay):
+  +4 MNIST, +101 Fashion
+- Total: +111 MNIST errors fixed, +215 Fashion errors fixed over dot baseline
+- Chirality, noise reduction (dead zone/bucket), divergence refinement
+  (edge-masked/weighted) all tested and failed — documented as negative results
+- An emerging algorithm pattern: RETRIEVE → FIELD → DECOMPOSE → ASSESS → ACCUMULATE
+
+---
+
 ## [0.1.0] — 2026-03-15
 
 Initial research release. 23 contributions establishing the ternary cascade
@@ -100,10 +156,11 @@ Three zero-cost composites: IG pre-baking, fused multi-probe, joint encoding.
 Pre-baked IG in hot map space gives only +0.54pp (not +15pp) because the hot
 map collapses per-image identity.
 
-**[20] LMM architectural analysis**
-Lincoln Manifold Method applied to SSTT. The cascade is a discrete Kalman
-filter in log-odds space. Confidence-gated hybrid architecture: fast hot map
-for easy images, cascade fallback for the hard ~15%.
+**[20] Confidence-gated hybrid architecture**
+The cascade is a discrete Kalman filter in log-odds space. Confidence-gated
+hybrid design: fast hot map for easy images, cascade fallback for the hard
+~15%. IG pre-baking gives only +0.54pp (not +15pp) in hot map space because
+the hot map collapses per-image identity.
 
 ---
 

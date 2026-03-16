@@ -176,23 +176,11 @@ counterintuitive when coming from Intel syntax. The quantization
 comparison block has an ordering bug that causes misclassifications.
 This is a WIP fix — the C kernel is the reference implementation.
 
-## MESI: The 12th Primitive
+## Concurrency
 
-The hot maps are read-only at inference time. Under the MESI cache
-coherency protocol, this has two powerful consequences:
-
-1. **Shared state = free multi-core replication.** When multiple cores
-   classify concurrently, the hot map cache lines settle into MESI
-   Shared state. Each core reads from its own L2/L3 without bus traffic.
-   No locks, no atomics, no explicit replication.
-
-2. **Invalidation = free model update propagation.** To update the model
-   (e.g., online learning), one core writes new values. MESI
-   automatically invalidates stale lines on other cores. The next read
-   from any core fetches the updated data. No explicit broadcast needed.
-
-This makes MESI effectively the 12th primitive: the cache coherency
-protocol provides distributed model management for free.
+The hot maps are read-only at inference time. Under MESI, multiple cores
+classify concurrently from L2/L3 without bus traffic — no locks, no
+atomics. Model updates propagate automatically via cache invalidation.
 
 ## Performance
 

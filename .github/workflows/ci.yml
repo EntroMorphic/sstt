@@ -29,16 +29,26 @@ jobs:
 
       - name: Build core classifiers
         run: |
-          make sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose \
-               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra"
+          make CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra -Werror"
 
       - name: Build all experiments
         run: |
           make experiments \
-               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra"
+               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra -Werror"
 
-      - name: Verify binaries exist
+      - name: Verify all binaries exist
         run: |
-          for bin in sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose; do
+          for bin in sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose \
+                     sstt_oracle sstt_oracle_v2 sstt_oracle_v3 sstt_parallel \
+                     sstt_mvp sstt_geom sstt_fused_test \
+                     sstt_bytepacked sstt_pentary sstt_transitions \
+                     sstt_series sstt_eigenseries sstt_ensemble \
+                     sstt_hybrid sstt_softcascade sstt_perihelion \
+                     sstt_push sstt_tiled sstt_tpca; do
             test -f "$bin" && echo "OK: $bin" || (echo "MISSING: $bin" && exit 1)
           done
+
+      - name: Run fused kernel correctness test
+        run: |
+          make mnist MNIST_URL="https://ossci-datasets.s3.amazonaws.com/mnist"
+          ./sstt_fused_test

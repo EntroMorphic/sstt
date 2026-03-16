@@ -128,18 +128,20 @@ static uint8_t *load_idx_file(const char *path, uint32_t *count,
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "ERROR: Cannot open %s\n", path); exit(1); }
     uint32_t magic, n;
-    fread(&magic, 4, 1, f); fread(&n, 4, 1, f);
+    if (fread(&magic, 4, 1, f) != 1 || fread(&n, 4, 1, f) != 1) { fclose(f); exit(1); }
     magic = __builtin_bswap32(magic); n = __builtin_bswap32(n); *count = n;
     int ndim = magic & 0xFF; size_t item_size = 1;
     if (ndim >= 3) {
-        uint32_t r, c; fread(&r, 4, 1, f); fread(&c, 4, 1, f);
+        uint32_t r, c;
+        if (fread(&r, 4, 1, f) != 1 || fread(&c, 4, 1, f) != 1) { fclose(f); exit(1); }
         r = __builtin_bswap32(r); c = __builtin_bswap32(c);
         if (ro) *ro = r; if (co) *co = c;
         item_size = (size_t)r * c;
     } else { if (ro) *ro = 0; if (co) *co = 0; }
     size_t total = (size_t)n * item_size;
     uint8_t *data = malloc(total);
-    fread(data, 1, total, f); fclose(f); return data;
+    if (!data || fread(data, 1, total, f) != total) { fclose(f); exit(1); }
+    fclose(f); return data;
 }
 static void load_data(void) {
     uint32_t n, r, c; char path[256];

@@ -139,16 +139,19 @@ static uint8_t *load_idx(const char *path, uint32_t *cnt,
     FILE *f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "ERR: %s\n", path); exit(1); }
     uint32_t m, n;
-    fread(&m,4,1,f); fread(&n,4,1,f);
+    if (fread(&m,4,1,f)!=1 || fread(&n,4,1,f)!=1) { fclose(f); exit(1); }
     m=__builtin_bswap32(m); n=__builtin_bswap32(n); *cnt=n;
     size_t s=1;
     if ((m&0xFF)>=3) {
-        uint32_t r,c; fread(&r,4,1,f); fread(&c,4,1,f);
+        uint32_t r,c;
+        if (fread(&r,4,1,f)!=1 || fread(&c,4,1,f)!=1) { fclose(f); exit(1); }
         r=__builtin_bswap32(r); c=__builtin_bswap32(c);
         if(ro)*ro=r; if(co)*co=c; s=(size_t)r*c;
     } else { if(ro)*ro=0; if(co)*co=0; }
-    uint8_t *d=malloc((size_t)n*s);
-    fread(d,1,(size_t)n*s,f); fclose(f); return d;
+    size_t total=(size_t)n*s;
+    uint8_t *d=malloc(total);
+    if (!d || fread(d,1,total,f)!=total) { fclose(f); exit(1); }
+    fclose(f); return d;
 }
 static void load_data(void) {
     uint32_t n,r,c; char p[256];
@@ -399,8 +402,6 @@ static int knn_vote(const cand_t*c,int nc,int k){
 }
 
 static void compute_dots(cand_t*cands,int nc,int ti){
-    const int8_t*qp=tern_train+(size_t)ti*PADDED; /* NOTE: ti = training image id */
-    (void)qp; /* computed per-candidate below */
     const int8_t*tp=tern_test +(size_t)ti*PADDED;
     const int8_t*th=hgrad_test+(size_t)ti*PADDED;
     const int8_t*tv=vgrad_test+(size_t)ti*PADDED;

@@ -23,6 +23,15 @@ sstt_oracle
 sstt_oracle_v2
 sstt_parallel
 sstt_oracle_v3
+sstt_topo
+sstt_topo2
+sstt_topo3
+sstt_topo4
+sstt_topo5
+sstt_topo6
+sstt_topo7
+sstt_topo8
+sstt_topo9
 data/
 data-fashion/
 *.o
