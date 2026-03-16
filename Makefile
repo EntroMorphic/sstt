@@ -1,6 +1,7 @@
 CC      = gcc
 CFLAGS  = -O3 -mavx2 -mfma -march=native -Wall -Wextra
 LDFLAGS = -lm
+SRC     = src
 
 MNIST_URL   = https://ossci-datasets.s3.amazonaws.com/mnist
 FASHION_URL = http://fashion-mnist.s3-website.eu-central-1.amazonaws.com
@@ -27,72 +28,72 @@ experiments: $(ALL_EXPERIMENTS)
 # ----------------------------------------------------------------
 # Core classifiers
 # ----------------------------------------------------------------
-sstt_v2: sstt_v2.c
+sstt_v2: $(SRC)/sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_bytecascade: sstt_bytecascade.c
+sstt_bytecascade: $(SRC)/sstt_bytecascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_multidot: sstt_multidot.c
+sstt_multidot: $(SRC)/sstt_multidot.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_diagnose: sstt_diagnose.c
+sstt_diagnose: $(SRC)/sstt_diagnose.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ----------------------------------------------------------------
 # Exploration experiments
 # ----------------------------------------------------------------
-sstt_mvp: sstt_mvp.c
+sstt_mvp: $(SRC)/sstt_mvp.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_geom: sstt_geom.c
+sstt_geom: $(SRC)/sstt_geom.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_bytepacked: sstt_bytepacked.c
+sstt_bytepacked: $(SRC)/sstt_bytepacked.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_pentary: sstt_pentary.c
+sstt_pentary: $(SRC)/sstt_pentary.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_transitions: sstt_transitions.c
+sstt_transitions: $(SRC)/sstt_transitions.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_series: sstt_series.c
+sstt_series: $(SRC)/sstt_series.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_eigenseries: sstt_eigenseries.c
+sstt_eigenseries: $(SRC)/sstt_eigenseries.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_ensemble: sstt_ensemble.c
+sstt_ensemble: $(SRC)/sstt_ensemble.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_hybrid: sstt_hybrid.c
+sstt_hybrid: $(SRC)/sstt_hybrid.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_softcascade: sstt_softcascade.c
+sstt_softcascade: $(SRC)/sstt_softcascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_perihelion: sstt_perihelion.c
+sstt_perihelion: $(SRC)/sstt_perihelion.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_push: sstt_push.c
+sstt_push: $(SRC)/sstt_push.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_tiled: sstt_tiled.c
+sstt_tiled: $(SRC)/sstt_tiled.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_tpca: sstt_tpca.c
+sstt_tpca: $(SRC)/sstt_tpca.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ----------------------------------------------------------------
 # Fused kernel (C + optional ASM variant)
 # ----------------------------------------------------------------
-sstt_fused_test: sstt_fused_test.c sstt_fused_c.c sstt_fused.h
-	$(CC) $(CFLAGS) -o $@ sstt_fused_test.c sstt_fused_c.c $(LDFLAGS)
+sstt_fused_test: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused_c.c $(SRC)/sstt_fused.h
+	$(CC) $(CFLAGS) -o $@ $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused_c.c $(LDFLAGS)
 
 # ASM variant (WIP — operand ordering bug under investigation)
-sstt_fused_test_asm: sstt_fused_test.c sstt_fused.S sstt_fused.h
-	$(CC) $(CFLAGS) -o $@ sstt_fused_test.c sstt_fused.S $(LDFLAGS)
+sstt_fused_test_asm: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused.S $(SRC)/sstt_fused.h
+	$(CC) $(CFLAGS) -o $@ $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused.S $(LDFLAGS)
 
 # ----------------------------------------------------------------
 # Data
