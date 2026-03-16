@@ -13,6 +13,7 @@ sstt_diagnose
 sstt_multidot
 sstt_oracle
 sstt_oracle_v2
+sstt_parallel
 data/
 data-fashion/
 *.o
