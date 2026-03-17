@@ -104,7 +104,8 @@ All experiment source files in `src/`. Each is self-contained.
 | 39 | [Stereoscopic quantization](39-stereoscopic-quantization.md) | Multi-perspective fusion: 3 eyes → 41.18% Bayesian; new primitive |
 | 40 | [Hierarchical decomposition](40-hierarchical-decomposition.md) | Machine/animal binary: 81%; oracle ceiling 48.86% |
 | 41 | [Stereo + MT4 stack](41-stereo-stack-cifar10.md) | All 3 power sources: 44.48%; LMM predicted correctly |
-| 42 | [Gauss map CIFAR-10](42-gauss-map-cifar10.md) | **48.31%** grid Gauss kNN — shape geometry beats texture |
+| 42 | [Gauss map CIFAR-10](42-gauss-map-cifar10.md) | 48.31% grid Gauss kNN — shape geometry beats texture |
+| 43 | [Cascade Gauss — 50%](43-cascade-gauss-50pct.md) | **50.18%** stereo vote → RGB Gauss rank; pipeline reconnected |
 
 CIFAR-10 experiment files in `src/`:
 

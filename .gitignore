@@ -74,3 +74,4 @@ data-cifar10/
 sstt_kdilute
 test_kdilute_simple
 *.log
+sstt_cifar10_cascade_gauss
