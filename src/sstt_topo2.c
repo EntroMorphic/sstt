@@ -1,8 +1,8 @@
 /*
  * sstt_topo2.c — Generalization Experiments: Divergence Dot, Histogram, Curl
  *
- * Follow-up to sstt_topo.c (97.11% MNIST, 84.24% Fashion).  The LMM pass
- * (contribution 30) identified a tension between information and invariance:
+ * Follow-up to sstt_topo.c (97.11% MNIST, 84.24% Fashion).  Contribution 30
+ * identified a tension between information and invariance:
  * the scalar divergence summary generalizes because it's position-invariant,
  * but it discards the spatial shape of the divergence field.
  *
@@ -103,7 +103,7 @@ static int16_t *hprof_train, *hprof_test;
 static int16_t *divneg_train, *divneg_test;
 static int16_t *divneg_cy_train, *divneg_cy_test;
 
-/* --- New features from LMM pass --- */
+/* --- New features from contribution 30 --- */
 static int8_t  *divtern_train, *divtern_test;     /* ternary divergence field [n][PADDED] */
 static int16_t *divhist_train, *divhist_test;     /* divergence histogram [n][DHIST_PAD] */
 static int16_t *curlneg_train, *curlneg_test;     /* curl neg sum */

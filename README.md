@@ -28,6 +28,20 @@ zero additional computation.
 | **Sequential field ranking** | **97.31%** | **85.81%** | **~1 ms** | **Batch** |
 | 3-channel cascade | 96.12% | — | 3.3 ms | Reference |
 
+### CIFAR-10 (32x32 RGB, zero learned parameters)
+
+| Method | Accuracy | Key |
+|--------|----------|-----|
+| Grayscale ternary cascade | 26.51% | Baseline |
+| Flattened RGB Bayesian | 36.58% | Color in blocks |
+| **MT4 4-plane full stack** | **42.05%** | **Best: 4-plane vote + dot + topo + Bayesian prior** |
+| Brute kNN (literature) | ~35-40% | SSTT exceeds with composition |
+
+42.05% = 4.2× random, zero learned parameters. Architecture generalizes
+(97.96% vote recall, composition stacks, confidence map transfers).
+Boundary: ternary representation can't separate texture-similar classes
+(deer↔frog, airplane↔ship). See [contribution 38](docs/38-cifar10-full-arc.md).
+
 Sequential field ranking: Green's theorem divergence, grid spatial
 decomposition, Kalman-adaptive weighting, Bayesian-CfC sequential
 candidate processing. Zero learned parameters.

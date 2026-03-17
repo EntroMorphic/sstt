@@ -20,7 +20,11 @@ ALL_EXPERIMENTS = $(CORE) \
 	sstt_push sstt_tiled sstt_tpca \
 	sstt_oracle sstt_oracle_v2 sstt_oracle_v3 sstt_parallel \
 	sstt_topo sstt_topo2 sstt_topo3 sstt_topo4 sstt_topo5 sstt_topo6 sstt_topo7 sstt_topo8 sstt_topo9 \
-	sstt_topo9_val sstt_gauss_delta sstt_cifar10 sstt_kdilute
+	sstt_topo9_val sstt_gauss_delta sstt_kdilute \
+	sstt_cifar10 sstt_cifar10_flat sstt_cifar10_grad sstt_cifar10_mt4 \
+	sstt_cifar10_full sstt_cifar10_stack sstt_cifar10_mt4vote \
+	sstt_cifar10_modec sstt_cifar10_why sstt_cifar10_rawdot \
+	sstt_cifar10_moe sstt_cifar10_qmad sstt_cifar10_propagate sstt_cifar10_mt7vote
 
 # Default: build the four most useful binaries
 all: $(CORE)
@@ -133,7 +137,11 @@ sstt_topo9_val: $(SRC)/sstt_topo9_val.c
 sstt_gauss_delta: $(SRC)/sstt_gauss_delta.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_cifar10: $(SRC)/sstt_cifar10.c
+# CIFAR-10 experiments (single-file pattern)
+sstt_cifar10 sstt_cifar10_flat sstt_cifar10_grad sstt_cifar10_mt4 \
+sstt_cifar10_full sstt_cifar10_stack sstt_cifar10_mt4vote \
+sstt_cifar10_modec sstt_cifar10_why sstt_cifar10_rawdot \
+sstt_cifar10_moe sstt_cifar10_qmad sstt_cifar10_propagate sstt_cifar10_mt7vote: sstt_%: $(SRC)/sstt_%.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 sstt_kdilute: $(SRC)/sstt_kdilute.c

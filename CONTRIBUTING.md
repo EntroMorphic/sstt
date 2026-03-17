@@ -1,14 +1,31 @@
 # Contributing to SSTT
 
-## Philosophy
+## Methodology: Hypothesis-Driven Experimental Search
 
-This project documents a research progression. Every experiment — including
-failures — is valuable. A clean negative result that rules out an approach
-saves future time. If you add an experiment, document it honestly.
+This project follows a specific research discipline:
 
-The project follows a hypothesis-driven methodology: state your hypothesis
-before writing code, record what the data says (not what you hoped), and
-document negative results with the same rigor as positive ones.
+1. **State the hypothesis before writing code.** Each experiment has a
+   documented prediction: "adding X should improve Y by approximately Z
+   because of mechanism W."
+
+2. **Implement as a self-contained experiment.** One `.c` file, one idea,
+   one test. No coupling between experiments.
+
+3. **Measure honestly.** Record what the data says, not what you hoped.
+   If the hypothesis is wrong, say so.
+
+4. **Document negative results equally.** A clean negative result that
+   rules out an approach (PCA fails at -16pp, soft-prior cascade fails,
+   hard filtering loses to soft weighting) is as valuable as a positive
+   one. It constrains the search space for everyone.
+
+5. **Red-team your own claims.** After finding a result, actively try to
+   break it: val/test splits, 1-NN controls, brute-force baselines,
+   timing validation. Report the honest numbers.
+
+This methodology produced 40 experiments, 8+ documented negative results,
+and a red-team validation that corrected two overclaimed findings. The
+process is transferable to any experimental ML project.
 
 ## Adding an Experiment
 

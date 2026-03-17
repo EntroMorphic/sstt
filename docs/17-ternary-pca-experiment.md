@@ -90,7 +90,7 @@ locality. The hot map's position-dependent frequency counting, which
 implicitly captures "this pattern occurs at this location," loses all
 spatial information.
 
-The hot map is fundamentally a spatial cipher. PCA produces a spectral
+The hot map is fundamentally a spatial lookup. PCA produces a spectral
 (variance-ranked) representation. These are incompatible.
 
 ### 4. The Eigenvalue Spectrum

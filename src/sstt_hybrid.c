@@ -1,7 +1,7 @@
 /*
  * sstt_hybrid.c — Confidence-Gated Hybrid Classifier
  *
- * The Lincoln Manifold applied to inference:
+ * Confidence-gated inference:
  *   Phase 1-3: Fused IG multi-probe hot map (fast, pure addressing)
  *   Phase 4:   Argmax with confidence margin
  *   Loop-back: Low confidence → cascade refinement (dot products)

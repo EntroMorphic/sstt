@@ -1,8 +1,8 @@
 /*
  * sstt_topo3.c — Topological Filtering: Partition First, Search Within
  *
- * The LMM's Laundry Method: don't mix coarse and fine signals in one
- * linear score.  Use topology to FILTER candidates, then rank the
+ * Hypothesis: don't mix coarse and fine signals in one linear score.
+ * Use topology to FILTER candidates, then rank the
  * survivors by dot product.
  *
  * Architecture:

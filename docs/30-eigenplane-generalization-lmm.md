@@ -1,7 +1,7 @@
-# Contribution 30: Eigenplane Generalization — An LMM Pass
+# Contribution 30: Eigenplane Generalization
 
 Three proposed approaches to improving generalization of the topological
-ranking features, explored through the Lincoln Manifold Method.
+ranking features, exploring the information/invariance tension.
 
 The problem: contribution 29 showed that only the gradient divergence
 feature transfers from MNIST to Fashion-MNIST. Centroid and profile are
@@ -505,7 +505,7 @@ extractable topology than we've used.
 
 ### The Throughline
 
-The LMM pass revealed that the three options (eigenplanes, splines,
+This analysis revealed that the three options (eigenplanes, splines,
 structure tensors) are all attempts to solve the same underlying
 tension: **more information vs more invariance**. The resolution is
 not to import continuous-math concepts (eigenvectors, splines) into
@@ -542,13 +542,13 @@ The three experiments were implemented and tested (topo2.c). Results:
 - **Curl:** Hurts both. Rotational structure is redundant with
   divergence for these datasets.
 
-The LMM's core prediction — that the tension between information and
+The core prediction — that the tension between information and
 invariance would determine which features generalize — was confirmed.
 The histogram approach (predicted as "architecturally native") did not
 help because the divergence field's value distribution is already well
 captured by the scalar summary.
 
-The actual breakthrough came from a direction the LMM didn't predict:
+The actual breakthrough came from a direction this analysis didn't predict:
 **Kalman-adaptive per-image weighting** (topo4.c) and **sequential
 candidate processing** (topo9.c). These are documented in
 [contribution 31](31-sequential-field-ranking.md).

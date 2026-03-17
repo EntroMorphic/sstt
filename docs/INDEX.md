@@ -13,7 +13,7 @@ see [`archived/README.md`](../archived/README.md) for context.
 | # | Title | Key Result |
 |---|-------|------------|
 | 01 | [sign_epi8 ternary multiply](01-sign-epi8-ternary-multiply.md) | 32-wide ternary ALU in one AVX2 instruction |
-| 02 | [Hot map: naive Bayes via ternary block frequencies](02-hot-map-cipher.md) | 73.23% at ~1 μs, 451 KB L2-resident model |
+| 02 | [Hot map: naive Bayes via ternary block frequencies](02-hot-map-cipher.md) | 73.23% at ~1 us, 451 KB L2-resident model |
 | 05 | [Background value discrimination](05-background-value-discrimination.md) | Per-channel BG constants; gradients 20% → 60-74% |
 | 06 | [Ternary gradient observers](06-ternary-gradient-observers.md) | 3-channel system: pixel + h-grad + v-grad |
 | 07 | [IG-weighted block voting](07-ig-weighted-block-voting.md) | +15.55pp in cascade context, closed-form from data |
@@ -55,7 +55,7 @@ see [`archived/README.md`](../archived/README.md) for context.
 | # | Title | Key Result |
 |---|-------|------------|
 | 29 | [Topological ranking](29-topological-ranking.md) | 97.11% — divergence + centroid + profile break the block-encoding ceiling |
-| 30 | [Eigenplane generalization (LMM pass)](30-eigenplane-generalization-lmm.md) | Information vs invariance tension; histogram/curl/dot tested |
+| 30 | [Eigenplane generalization](30-eigenplane-generalization-lmm.md) | Information vs invariance tension; histogram/curl/dot tested |
 | 31 | [Sequential field-theoretic ranking](31-sequential-field-ranking.md) | **97.31% MNIST, 85.81% Fashion** — the emerging algorithm |
 
 ## Experiment Files
@@ -75,9 +75,10 @@ All experiment source files in `src/`. Each is self-contained.
 | sstt_topo9.c | Bayesian-CfC sequential | 97.31% MNIST, 85.81% Fashion |
 | sstt_error_profile.c | Feature-space error autopsy | Top-10 agree: 100-200x predictor |
 | sstt_gauss_map.c | Discrete Gauss map | 45+64 bin joint histogram |
-| sstt_gauss_delta.c | Ground-state delta encoding | Built, results pending |
+| sstt_gauss_delta.c | Ground-state delta encoding | +19 MNIST, +20 Fashion; "maps all the way down" not validated |
 | sstt_confidence_map.c | Quantized confidence map | 47% MI, 97.2% on Fashion confident 50% |
 | sstt_vote_route.c | Vote-phase free routing | 99.6% on easy 22%, zero ranking cost |
+| sstt_topo9_val.c | Proper val/holdout validation | Val-derived weights, holdout-only reporting |
 
 ## Next Phase-Changes
 
@@ -90,6 +91,33 @@ All experiment source files in `src/`. Each is self-contained.
 | # | Title | Key Result |
 |---|-------|------------|
 | 32 | [Red-team validation](32-red-team-validation.md) | Val/test split, 1-NN control, brute kNN baseline, timing, pre-vote MI |
+| 35 | [Val/holdout validation](35-val-holdout-validation.md) | Proper split: MNIST 97.27%, Fashion 85.68% (publication-ready) |
+| 36 | [Delta map experiment](36-delta-map-experiment.md) | +19/+20 errors; partial negative — "maps all the way down" not validated |
+| 37 | [CIFAR-10 boundary test](37-cifar10-boundary-test.md) | 33.76% Bayesian (3.4x random); cascade fails — honest boundary |
+
+## CIFAR-10 Boundary Test
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 37 | [CIFAR-10 boundary test](37-cifar10-boundary-test.md) | 33.76% Bayesian (3.4x random); cascade fails on grayscale |
+| 38 | [CIFAR-10 full arc](38-cifar10-full-arc.md) | **42.05%** via MT4 4-plane vote + full stack; honest boundary |
+
+CIFAR-10 experiment files in `src/`:
+
+| File | Experiment | Key finding |
+|------|-----------|-------------|
+| sstt_cifar10.c | Grayscale baseline | 33.76% Bayesian, pixel dot kills cascade |
+| sstt_cifar10_flat.c | Flattened RGB (32x96) | 36.58% Bayesian — color in blocks helps |
+| sstt_cifar10_grad.c | Gradient channel ablation | Pixel dot is the contaminant |
+| sstt_cifar10_mt4.c | MT4 81-level dot | Sweet spot: 81 levels > 3 levels > raw |
+| sstt_cifar10_stack.c | Full stack + RGB div | 41.24% — composition works |
+| sstt_cifar10_mt4vote.c | MT4 full-pipeline vote | **42.05%** — best: 4-plane vote + dot + topo |
+| sstt_cifar10_full.c | Cascade autopsy | Mode C (60.5%) dominates, not Mode B |
+| sstt_cifar10_why.c | Per-class failure | deer↔frog, airplane↔ship: texture overlap |
+| sstt_cifar10_rawdot.c | Raw dot ceiling | 13.54% — quantization is a feature, not a loss |
+| sstt_cifar10_mt7vote.c | MT7 diminishing returns | 39.72% — more planes hurt past 4 |
+| sstt_cifar10_moe.c | MoE routing | +0.12pp marginal |
+| sstt_cifar10_propagate.c | Label propagation | Hurts — manifold doesn't respect classes |
 
 ## Meta
 
@@ -97,3 +125,4 @@ All experiment source files in `src/`. Each is self-contained.
 |---|-------|
 | 26 | [Audit: novel, useful, fluff, understated](26-audit-novel-useful-fluff-understated.md) |
 | 27 | [Remediation plan](27-remediation-plan.md) |
+| 34 | [Independent audit: novel, useful, fluff, understated](34-independent-audit.md) |

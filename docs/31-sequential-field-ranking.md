@@ -47,7 +47,7 @@ generalizes.**
 
 ### Phase 2: Generalization Experiments (topo2.c) — What Transfers?
 
-Three LMM-derived features tested on top of topo v1:
+Three features tested on top of topo v1:
 
 | Feature | MNIST | Fashion | Transfers? |
 |---------|-------|---------|-----------|
@@ -57,8 +57,9 @@ Three LMM-derived features tested on top of topo v1:
 
 **Finding:** The full spatial divergence field helps Fashion (complex
 textures benefit from spatial detail) but hurts MNIST (simple digits
-are fully captured by the scalar summary). The LMM pass predicted
-this tension between information and invariance. The data confirmed it.
+are fully captured by the scalar summary). This reflects the
+information/invariance tension: more spatial detail helps complex
+textures, hurts simple shapes.
 
 ### Phase 3: Filter vs Weight (topo3.c) — Soft Beats Hard
 

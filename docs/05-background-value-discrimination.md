@@ -2,7 +2,7 @@
 
 ## Discovery
 
-When extending the hot map cipher from single-channel (pixel) to
+When extending the hot map from single-channel (pixel) to
 multi-channel (pixel + gradients), the gradient channels initially
 showed near-random accuracy. The bug: gradient hot maps were skipping
 block value 0 (the pixel background), but the gradient background is

@@ -40,12 +40,11 @@ gradient divergence (Green's theorem, +43), enclosed-region centroid (+49),
 horizontal profile (+9). Euler failed (binarization too aggressive).
 Divergence operates on the gradient field directly — no binarization.
 
-**[30] Eigenplane generalization (LMM pass)**
-Lincoln Manifold Method applied to the information/invariance tension.
-Predicted divergence histogram, curl, and divergence dot as experiments.
-Histogram and curl failed. Divergence dot helps Fashion only. The LMM
-correctly identified the tension but the resolution came from Kalman
-adaptive weighting, not from the predicted features.
+**[30] Eigenplane generalization**
+Explored the information/invariance tension. Predicted divergence
+histogram, curl, and divergence dot as experiments. Histogram and curl
+failed. Divergence dot helps Fashion only. The resolution came from
+Kalman adaptive weighting, not from the predicted features.
 
 **[31] Sequential field-theoretic ranking** -> **97.31% MNIST, 85.81% Fashion**
 Nine experiments (topo through topo9) building a sequential ranking system:
