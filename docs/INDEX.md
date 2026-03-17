@@ -100,7 +100,11 @@ All experiment source files in `src/`. Each is self-contained.
 | # | Title | Key Result |
 |---|-------|------------|
 | 37 | [CIFAR-10 boundary test](37-cifar10-boundary-test.md) | 33.76% Bayesian (3.4x random); cascade fails on grayscale |
-| 38 | [CIFAR-10 full arc](38-cifar10-full-arc.md) | **42.05%** via MT4 4-plane vote + full stack; honest boundary |
+| 38 | [CIFAR-10 full arc](38-cifar10-full-arc.md) | 42.05% via MT4 4-plane vote + full stack |
+| 39 | [Stereoscopic quantization](39-stereoscopic-quantization.md) | Multi-perspective fusion: 3 eyes → 41.18% Bayesian; new primitive |
+| 40 | [Hierarchical decomposition](40-hierarchical-decomposition.md) | Machine/animal binary: 81%; oracle ceiling 48.86% |
+| 41 | [Stereo + MT4 stack](41-stereo-stack-cifar10.md) | All 3 power sources: 44.48%; LMM predicted correctly |
+| 42 | [Gauss map CIFAR-10](42-gauss-map-cifar10.md) | **48.31%** grid Gauss kNN — shape geometry beats texture |
 
 CIFAR-10 experiment files in `src/`:
 
@@ -111,9 +115,19 @@ CIFAR-10 experiment files in `src/`:
 | sstt_cifar10_grad.c | Gradient channel ablation | Pixel dot is the contaminant |
 | sstt_cifar10_mt4.c | MT4 81-level dot | Sweet spot: 81 levels > 3 levels > raw |
 | sstt_cifar10_stack.c | Full stack + RGB div | 41.24% — composition works |
-| sstt_cifar10_mt4vote.c | MT4 full-pipeline vote | **42.05%** — best: 4-plane vote + dot + topo |
+| sstt_cifar10_mt4vote.c | MT4 full-pipeline vote | 42.05% — 4-plane vote + dot + topo |
 | sstt_cifar10_full.c | Cascade autopsy | Mode C (60.5%) dominates, not Mode B |
 | sstt_cifar10_why.c | Per-class failure | deer↔frog, airplane↔ship: texture overlap |
+| sstt_cifar10_correlate.c | Feature-accuracy correlation | Brightness is #1 predictor; system classifies by photography |
+| sstt_cifar10_adaptive.c | Adaptive quantization | Cat +9.8pp; airplane -17pp; brightness is signal AND noise |
+| sstt_cifar10_dual.c | Dual quantization | Fixed+adaptive Bayesian: 40.20% — stereoscopic principle |
+| sstt_cifar10_stereo.c | 5-eye stereoscopic | 3 eyes optimal: 41.18%; diminishing returns past 3 |
+| sstt_cifar10_stereo_stack.c | Stereo + MT4 + topo | **44.48%** — all 3 power sources combined |
+| sstt_cifar10_binary.c | Machine/animal binary | 81% binary; oracle hierarchical 48.86% |
+| sstt_cifar10_edgemask.c | Edge-based background suppression | Gradient eyes: frog 77%, cat 29.4% on edge structure |
+| sstt_cifar10_gauss.c | Gauss map (sphere geometry) | **48.31%** grid Gauss kNN — new best, shape > texture |
+| sstt_cifar10_fused.c | Fused stereo + Gauss | Gauss alone beats all fusions; block system now weaker partner |
+| sstt_fashion_stereo.c | Fashion-MNIST stereoscopic | **86.12%** — stereo validates on Fashion (+0.44pp) |
 | sstt_cifar10_rawdot.c | Raw dot ceiling | 13.54% — quantization is a feature, not a loss |
 | sstt_cifar10_mt7vote.c | MT7 diminishing returns | 39.72% — more planes hurt past 4 |
 | sstt_cifar10_moe.c | MoE routing | +0.12pp marginal |
@@ -126,3 +140,5 @@ CIFAR-10 experiment files in `src/`:
 | 26 | [Audit: novel, useful, fluff, understated](26-audit-novel-useful-fluff-understated.md) |
 | 27 | [Remediation plan](27-remediation-plan.md) |
 | 34 | [Independent audit: novel, useful, fluff, understated](34-independent-audit.md) |
+| — | [CIFAR-10 LMM analysis](cifar10_lmm_synth.md) | RAW→NODES→REFLECT→SYNTH: adaptive quantization prescribed |
+| — | [Stereo LMM analysis](stereo_lmm_synth.md) | Three power sources identified; stereo+MT4 predicted at 43-44% |

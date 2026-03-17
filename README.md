@@ -34,13 +34,19 @@ zero additional computation.
 |--------|----------|-----|
 | Grayscale ternary cascade | 26.51% | Baseline |
 | Flattened RGB Bayesian | 36.58% | Color in blocks |
-| **MT4 4-plane full stack** | **42.05%** | **Best: 4-plane vote + dot + topo + Bayesian prior** |
-| Brute kNN (literature) | ~35-40% | SSTT exceeds with composition |
+| MT4 4-plane full stack | 42.05% | 4-plane vote + dot + topo + Bayesian |
+| Stereo + MT4 stack (3-eye) | 44.48% | Multi-perspective + retrieval + ranking |
+| **Grid Gauss map kNN** | **48.31%** | **Shape geometry on unit sphere — new best** |
+| Brute kNN (literature) | ~35-40% | SSTT exceeds both paths |
 
-42.05% = 4.2× random, zero learned parameters. Architecture generalizes
-(97.96% vote recall, composition stacks, confidence map transfers).
-Boundary: ternary representation can't separate texture-similar classes
-(deer↔frog, airplane↔ship). See [contribution 38](docs/38-cifar10-full-arc.md).
+48.31% = 4.8× random, zero learned parameters. Two orthogonal systems:
+block-based stereo (color/texture) and Gauss map (edge geometry/shape).
+The Gauss map maps pixel gradients onto a unit sphere — flat background
+vanishes, only edges contribute. Classifies on shape, not photography.
+See [contribution 42](docs/42-gauss-map-cifar10.md).
+
+**Fashion-MNIST stereoscopic: 86.12%** (+0.44pp) — stereo principle
+validates across datasets. See `src/sstt_fashion_stereo.c`.
 
 Sequential field ranking: Green's theorem divergence, grid spatial
 decomposition, Kalman-adaptive weighting, Bayesian-CfC sequential
