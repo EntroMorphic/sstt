@@ -135,12 +135,27 @@ static int knn_vote(const cand_t*c,int nc,int k){int v[N_CLASSES]={0};if(k>nc)k=
 static int cmp_i16(const void*a,const void*b){return *(const int16_t*)a-*(const int16_t*)b;}
 static int compute_mad(const cand_t*cands,int nc){if(nc<3)return 1000;int16_t vals[TOP_K];for(int j=0;j<nc;j++)vals[j]=divneg_train[cands[j].id];qsort(vals,(size_t)nc,sizeof(int16_t),cmp_i16);int16_t med=vals[nc/2];int16_t devs[TOP_K];for(int j=0;j<nc;j++)devs[j]=(int16_t)abs(vals[j]-med);qsort(devs,(size_t)nc,sizeof(int16_t),cmp_i16);return devs[nc/2]>0?devs[nc/2]:1;}
 
+/* Forward declarations */
+static int run_static_tuned(const cand_t*pre,const int*nc_arr,
+                       const int16_t*qg,const int16_t*tg,int nreg,
+                       int w_c,int w_p,int w_d,int w_g,int sc,
+                       int T_MAD,int T_DIV,
+                       uint8_t*preds);
+
 /* ================================================================
  *  Static sort-then-vote (topo8 best, for baseline)
  * ================================================================ */
 static int run_static(const cand_t*pre,const int*nc_arr,
                        const int16_t*qg,const int16_t*tg,int nreg,
                        int w_c,int w_p,int w_d,int w_g,int sc,
+                       uint8_t*preds){
+    return run_static_tuned(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,0,-100,preds);
+}
+
+static int run_static_tuned(const cand_t*pre,const int*nc_arr,
+                       const int16_t*qg,const int16_t*tg,int nreg,
+                       int w_c,int w_p,int w_d,int w_g,int sc,
+                       int T_MAD,int T_DIV,
                        uint8_t*preds){
     int correct=0;
     for(int i=0;i<TEST_N;i++){
@@ -152,11 +167,33 @@ static int run_static(const cand_t*pre,const int*nc_arr,
         int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
         for(int j=0;j<nc;j++)cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg+(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim+(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim;
         qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
-        /* kNN dilution prevention: skip kNN if confident (Method 4) */
         int pred;
-        if(mad<40 && divneg_test[i]<-20) pred=train_labels[cands[0].id];
-        else pred=knn_vote(cands,nc,3);
+        // Method 4 disabled: testing showed NO improvement on real MNIST (doc 39)
+        pred=knn_vote(cands,nc,3);
         if(preds)preds[i]=(uint8_t)pred;
+        if(pred==test_labels[i])correct++;
+    }
+    return correct;
+}
+
+static int tune_method4_split(const cand_t*pre,const int*nc_arr,
+                       const int16_t*qg,const int16_t*tg,int nreg,
+                       int w_c,int w_p,int w_d,int w_g,int sc,
+                       int T_MAD,int T_DIV,
+                       int start_idx,int end_idx){
+    int correct=0;
+    for(int i=start_idx;i<end_idx;i++){
+        cand_t cands[TOP_K];int nc=nc_arr[i];
+        memcpy(cands,pre+(size_t)i*TOP_K,(size_t)nc*sizeof(cand_t));
+        const int16_t*qi=qg+(size_t)i*MAX_REGIONS;
+        for(int j=0;j<nc;j++){const int16_t*ci=tg+(size_t)cands[j].id*MAX_REGIONS;int32_t l=0;for(int r=0;r<nreg;r++)l+=abs(qi[r]-ci[r]);cands[j].gdiv_sim=-l;}
+        int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
+        int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
+        for(int j=0;j<nc;j++)cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg+(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim+(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim;
+        qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
+        int pred;
+        if(mad<T_MAD && divneg_test[i]<T_DIV) pred=train_labels[cands[0].id];
+        else pred=knn_vote(cands,nc,3);
         if(pred==test_labels[i])correct++;
     }
     return correct;
@@ -417,6 +454,20 @@ int main(int argc,char**argv){
     /* A: Static baseline (topo8 best) */
     int cA=run_static(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc_val,preds);
     report(preds,"A: Static sort-then-vote (topo8 best)",cA);
+
+    /* Method 4 tuning on val/holdout */
+    printf("--- Method 4: kNN Dilution Prevention Tuning ---\n");
+    { int best_mad=0,best_div=0,best_val=0;
+      int mad_vals[]={10,20,30,40,50};
+      int div_vals[]={-50,-30,-20,-10,0};
+      for(int mi=0;mi<5;mi++)for(int di=0;di<5;di++){
+          int cv=tune_method4_split(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc_val,mad_vals[mi],div_vals[di],0,5000);
+          int ch=tune_method4_split(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc_val,mad_vals[mi],div_vals[di],5000,10000);
+          if(cv>best_val){best_val=cv;best_mad=mad_vals[mi];best_div=div_vals[di];}
+          printf("  T_mad=%d T_div=%d: val=%d (%.2f%%) | holdout=%d (%.2f%%)\n",mad_vals[mi],div_vals[di],cv,100.0*cv/5000,ch,100.0*ch/5000);
+      }
+      printf("  Best (val): T_mad=%d T_div=%d (%.2f%% val = %d errors)\n\n",best_mad,best_div,100.0*best_val/5000,5000-best_val);
+    }
 
     /* B: Bayesian sequential sweep */
     printf("--- B: Bayesian Sequential sweep ---\n");
