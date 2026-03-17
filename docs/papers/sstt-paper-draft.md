@@ -8,11 +8,13 @@ inference. The system achieves 97.27% on MNIST and 86.12% on
 Fashion-MNIST through a pipeline of integer table lookups, AVX2 byte
 operations, and information-theoretic feature weighting. On CIFAR-10,
 we demonstrate that the architecture generalizes to natural images,
-reaching 48.31% (4.8× random) through two novel contributions:
+reaching 50.18% (5× random) through three novel contributions:
 stereoscopic multi-perspective quantization, which fuses Bayesian
 posteriors from multiple quantization functions applied to the same
-image, and Gauss map classification, which maps pixel gradients onto
-a unit sphere to classify on edge geometry rather than pixel texture.
+image; Gauss map classification, which maps pixel gradients onto
+a unit sphere to classify on edge geometry rather than pixel texture;
+and cascade composition, which uses texture-based retrieval to narrow
+the candidate set before shape-based Gauss map ranking resolves it.
 The Gauss map inherently suppresses background — flat regions produce
 zero gradient and vanish from the representation. We document the
 complete experimental progression: 42 contributions, 30+ CIFAR-10
@@ -321,8 +323,9 @@ Classification: brute kNN with L1 distance on the grid Gauss map.
 | Method | CIFAR-10 |
 |--------|----------|
 | Global Gauss map (180 features) | 36.07% |
-| **Grid Gauss map (720 features)** | **48.31%** |
+| Grid Gauss map brute kNN (720 features) | 48.31% |
 | Block-based stereo + MT4 stack | 44.48% |
+| **Cascade: stereo vote → RGB Gauss rank** | **50.18%** |
 
 The grid Gauss map at 48.31% is the highest CIFAR-10 accuracy achieved
 in this work, using a completely different mechanism than the
@@ -513,6 +516,9 @@ principles that no individual experiment would reveal.
 
 +3.83   Grid Gauss map kNN (shape geometry)
 = 48.31% (Gauss map — new architecture)
+
++1.87   RGB channels + cascade retrieval + k=7 voting
+= 50.18% (cascade: texture retrieval → shape ranking)
 ```
 
 Each step applied a principle discovered through experimentation.

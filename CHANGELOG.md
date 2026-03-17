@@ -4,6 +4,47 @@ All notable changes to SSTT are documented here. Each entry corresponds to one
 numbered contribution in `docs/`. Accuracy figures are on the MNIST test set
 (10,000 images) unless otherwise noted.
 
+## [0.3.0] — 2026-03-17
+
+Independent audit, CIFAR-10 generalization, and three architectural discoveries.
+
+**[34] Independent audit** — Novel/useful/fluff/understated reassessment with
+10 actionable recommendations, all implemented. LMM branding stripped.
+
+**[35] Val/holdout validation** — Publication-ready: 97.27% MNIST, 85.68% Fashion.
+MNIST weights identical under val split (no overfitting). Sequential on MNIST
+retracted (+0.03pp = noise).
+
+**[36] Delta map** — +19/+20 errors. "Maps all the way down" not validated.
+
+**[37-38] CIFAR-10 boundary test** — 14 experiments. Grayscale 26.51% → MT4
+full stack 42.05%. Flattened RGB, gradient ablation, MT4 81-level quantization,
+topological features, Bayesian prior composition.
+
+**[39] Stereoscopic multi-perspective quantization** — New architectural primitive.
+Three quantization perspectives fused through Bayesian posterior summation.
+41.18% CIFAR-10. Validated on Fashion-MNIST: 86.12% (+0.44pp).
+
+**[40] Hierarchical decomposition** — Machine/animal binary: 81%. Oracle ceiling
+48.86%.
+
+**[41] Stereo + MT4 stack** — All three power sources: 44.48%. LMM predicted
+43-44%.
+
+**[42] Gauss map CIFAR-10** — Map gradients onto unit sphere. Grid Gauss map
+kNN: 48.31%. Shape geometry beats texture. Background inherently suppressed.
+
+**[43] Cascade Gauss — 50%** → **50.18%**. Texture retrieval (3-eye stereo vote)
+→ shape ranking (RGB grid Gauss map). Pipeline reconnection. 5× random.
+
+Also: adaptive quantization, edge-based background suppression, ternary vs
+binary vs pentary, multi-scale blocks, MoE routing, label propagation,
+quantized MAD, raw dot ceiling test, non-monotonic quantization curve,
+feature-accuracy correlation analysis, and 4 LMM deployments.
+
+CIFAR-10 progression: 26.51% → 50.18% (+23.67pp). 43 contributions.
+Zero learned parameters throughout.
+
 ## [0.2.0] — 2026-03-16
 
 Oracle routing, benchmark catalogue, parallel cascade, and project audit.

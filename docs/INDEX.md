@@ -93,6 +93,7 @@ All experiment source files in `src/`. Each is self-contained.
 | 32 | [Red-team validation](32-red-team-validation.md) | Val/test split, 1-NN control, brute kNN baseline, timing, pre-vote MI |
 | 35 | [Val/holdout validation](35-val-holdout-validation.md) | Proper split: MNIST 97.27%, Fashion 85.68% (publication-ready) |
 | 36 | [Delta map experiment](36-delta-map-experiment.md) | +19/+20 errors; partial negative — "maps all the way down" not validated |
+| — | Fashion-MNIST stereoscopic (`sstt_fashion_stereo.c`) | **86.12%** — stereo principle validated on Fashion (+0.44pp) |
 | 37 | [CIFAR-10 boundary test](37-cifar10-boundary-test.md) | 33.76% Bayesian (3.4x random); cascade fails — honest boundary |
 
 ## CIFAR-10 Boundary Test
@@ -133,6 +134,20 @@ CIFAR-10 experiment files in `src/`:
 | sstt_cifar10_mt7vote.c | MT7 diminishing returns | 39.72% — more planes hurt past 4 |
 | sstt_cifar10_moe.c | MoE routing | +0.12pp marginal |
 | sstt_cifar10_propagate.c | Label propagation | Hurts — manifold doesn't respect classes |
+| sstt_cifar10_multiscale.c | Multi-scale blocks | +0.62pp Bayesian — scales are redundant |
+| sstt_cifar10_ternvbin.c | Ternary vs binary vs pentary | Pentary (5-level) best individual eye at 37.82% |
+| sstt_cifar10_binary_dig.c | Binary split deep dive | Horse worst at binary (74.9%); R-B balance is discriminator |
+| sstt_cifar10_cascade_gauss.c | Cascade: vote → Gauss rank | **50.18%** — texture retrieval + shape ranking |
+| sstt_cifar10_curvature.c | Second-order curvature | Running — results pending |
+
+## kNN Dilution Prevention (prior session)
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 38* | [kNN dilution integration](38-knndilute-integration.md) | Mode C prevention: skip kNN when rank-1 confident |
+| 39* | [Method 4 tuning](39-method4-tuning-real-mnist.md) | Tuned on real MNIST data |
+
+*Numbering collision with CIFAR-10 contributions 38-39; these are from a prior session.
 
 ## Meta
 
@@ -141,5 +156,12 @@ CIFAR-10 experiment files in `src/`:
 | 26 | [Audit: novel, useful, fluff, understated](26-audit-novel-useful-fluff-understated.md) |
 | 27 | [Remediation plan](27-remediation-plan.md) |
 | 34 | [Independent audit: novel, useful, fluff, understated](34-independent-audit.md) |
-| — | [CIFAR-10 LMM analysis](cifar10_lmm_synth.md) | RAW→NODES→REFLECT→SYNTH: adaptive quantization prescribed |
-| — | [Stereo LMM analysis](stereo_lmm_synth.md) | Three power sources identified; stereo+MT4 predicted at 43-44% |
+
+### LMM Analyses
+
+| Analysis | Key Finding |
+|----------|------------|
+| [CIFAR-10 LMM](cifar10_lmm_synth.md) | Brightness is #1 confound → adaptive quantization → stereoscopic principle |
+| [Stereo LMM](stereo_lmm_synth.md) | Three power sources → predicted 43-44% → actual 44.48% |
+| [Gauss map LMM](gauss_lmm_synth.md) | Restore pipeline: texture retrieval → shape ranking → predicted 50% → actual 50.18% |
+| [Session retrospective LMM](session_lmm_synth.md) | The ceiling is always in the combination; second-order curvature is next |

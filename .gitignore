@@ -75,3 +75,4 @@ sstt_kdilute
 test_kdilute_simple
 *.log
 sstt_cifar10_cascade_gauss
+sstt_cifar10_curvature
