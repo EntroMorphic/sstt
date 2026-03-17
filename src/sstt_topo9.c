@@ -152,7 +152,10 @@ static int run_static(const cand_t*pre,const int*nc_arr,
         int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
         for(int j=0;j<nc;j++)cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg+(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim+(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim;
         qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
-        int pred=knn_vote(cands,nc,3);
+        /* kNN dilution prevention: skip kNN if confident (Method 4) */
+        int pred;
+        if(mad<40 && divneg_test[i]<-20) pred=train_labels[cands[0].id];
+        else pred=knn_vote(cands,nc,3);
         if(preds)preds[i]=(uint8_t)pred;
         if(pred==test_labels[i])correct++;
     }
@@ -198,7 +201,10 @@ static int run_bayesian_seq(const cand_t*pre,const int*nc_arr,
             int64_t weight = evidence * decay_S / (decay_S + j);
             state[lbl] += weight;
         }
-        int pred=0;for(int c=1;c<N_CLASSES;c++)if(state[c]>state[pred])pred=c;
+        /* kNN dilution prevention: skip ranking if confident */
+        int pred;
+        if(mad<40 && divneg_test[i]<-20) pred=train_labels[cands[0].id];
+        else {int pred_tmp=0;for(int c=1;c<N_CLASSES;c++)if(state[c]>state[pred_tmp])pred_tmp=c;pred=pred_tmp;}
         if(preds)preds[i]=(uint8_t)pred;
         if(pred==test_labels[i])correct++;
     }
@@ -254,7 +260,10 @@ static int run_cfc(const cand_t*pre,const int*nc_arr,
                 h[c] = (decay_num * h[c] + input) / decay_den;
             }
         }
-        int pred=0;for(int c=1;c<N_CLASSES;c++)if(h[c]>h[pred])pred=c;
+        /* kNN dilution prevention: skip ranking if confident */
+        int pred;
+        if(mad<40 && divneg_test[i]<-20) pred=train_labels[cands[0].id];
+        else {int pred_tmp=0;for(int c=1;c<N_CLASSES;c++)if(h[c]>h[pred_tmp])pred_tmp=c;pred=pred_tmp;}
         if(preds)preds[i]=(uint8_t)pred;
         if(pred==test_labels[i])correct++;
     }
@@ -312,7 +321,10 @@ static int run_pipeline(const cand_t*pre,const int*nc_arr,
             }
         }
 
-        int pred=0;for(int c=1;c<N_CLASSES;c++)if(h[c]>h[pred])pred=c;
+        /* kNN dilution prevention: skip ranking if confident */
+        int pred;
+        if(mad<40 && divneg_test[i]<-20) pred=train_labels[cands[0].id];
+        else {int pred_tmp=0;for(int c=1;c<N_CLASSES;c++)if(h[c]>h[pred_tmp])pred_tmp=c;pred=pred_tmp;}
         if(preds)preds[i]=(uint8_t)pred;
         if(pred==test_labels[i])correct++;
     }
