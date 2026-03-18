@@ -121,4 +121,6 @@ All experiment source files in `src/`. Each is self-contained.
 | 50 | [Tiered Router Validation](50-tiered-router-validation.md) | Prototype achieves 99.9% accuracy on 15% of images instantly |
 | 51 | [Production Tiered Inference](51-production-ready-tiered-inference.md) | Consolidated 96.5% engine with adaptive compute tiers |
 | 52 | [Scaling Framework 224x224](52-scaling-framework-224x224.md) | Sparse training + interpolation for 16x model compression |
+| 53 | [Lagrangian Benchmark Autopsy](53-lagrangian-benchmark-autopsy.md) | Diagnosis of the fusion drop and path to topological gating |
+| 54 | [Red-Team Validation Log](54-red-team-validation-log.md) | Dataset sensitivity analysis and zero-FP Tier 1 validation |
 

@@ -24,10 +24,9 @@ zero additional computation.
 
 | Method | Accuracy (MNIST) | Latency | Regime |
 |--------|------------------|---------|--------|
+| Dual Hot Map | 76.53% | 1.5 μs | Embedded Instant |
 | Bytepacked Bayesian | 91.83% | 1.9 μs | Embedded Real-time |
 | Pentary Hot Map | 86.31% | 4.7 μs | Embedded Real-time |
-| Bytecascade (4-probe) | 96.07% | 610 μs | Interactive |
-| Bytecascade (8-probe) | 96.28% | 930 μs | Interactive |
 | **Tiered Router v1** | **96.50%** | **670 μs** | **Production Hybrid** |
 | Sparse Scaling (224) | — | ~70 μs | High-Res Cache-Resident |
 | Field-Theoretic Ranking | 97.27% | ~1 ms | Batch / Research |
