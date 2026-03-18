@@ -28,6 +28,12 @@ compute.
 - **Tier 3 (Deep):** Full topological ranking for hard subset.
 - Result: **96.50% MNIST** at **0.67ms average latency** (2x throughput lift).
 
+**[52] Scaling Framework (224x224)** — Validated Sparse Training + 
+Interpolation (Spline-equivalent) for high-resolution scaling.
+- Achieved **16x model compression** with **98.5% accuracy retention**.
+- Demonstrates path to sub-millisecond high-res inference while 
+  maintaining cache-residency.
+
 ## [0.3.0] — 2026-03-17
 
 Independent audit, CIFAR-10 generalization, and three architectural discoveries.

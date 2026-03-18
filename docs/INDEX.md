@@ -120,4 +120,5 @@ All experiment source files in `src/`. Each is self-contained.
 | 49 | [Three-Tier Router Design](49-tiered-router-design.md) | Architectural specification for adaptive compute per-image |
 | 50 | [Tiered Router Validation](50-tiered-router-validation.md) | Prototype achieves 99.9% accuracy on 15% of images instantly |
 | 51 | [Production Tiered Inference](51-production-ready-tiered-inference.md) | Consolidated 96.5% engine with adaptive compute tiers |
+| 52 | [Scaling Framework 224x224](52-scaling-framework-224x224.md) | Sparse training + interpolation for 16x model compression |
 

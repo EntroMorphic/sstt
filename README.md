@@ -29,6 +29,7 @@ zero additional computation.
 | Bytecascade (4-probe) | 96.07% | 610 μs | Interactive |
 | Bytecascade (8-probe) | 96.28% | 930 μs | Interactive |
 | **Tiered Router v1** | **96.50%** | **670 μs** | **Production Hybrid** |
+| Sparse Scaling (224) | — | ~70 μs | High-Res Cache-Resident |
 | Field-Theoretic Ranking | 97.27% | ~1 ms | Batch / Research |
 | Curvature-Gauss Cascade | 50.18% | ~3 ms | CIFAR-10 Best |
 
