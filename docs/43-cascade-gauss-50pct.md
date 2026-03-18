@@ -82,9 +82,9 @@ candidates are already color-similar.
 
 ## Why the Cascade Helps
 
-The LMM REFLECT predicted: "among texture-plausible candidates, the
-Gauss map has an easier job — it only needs to distinguish deer from
-frog (both green), not deer from airplane (irrelevant)."
+The analysis of texture-plausible candidates shows the Gauss map has an easier
+job when pre-filtered: it only needs to distinguish deer from frog (both green),
+not deer from airplane (irrelevant).
 
 The data confirms: recall is 99.4% (the correct class is almost always
 in the top-200). Among those 200 texture-similar candidates, the Gauss
@@ -120,18 +120,7 @@ and pipeline reconnection.
 
 ---
 
-## LMM Validation
-
-The SYNTHESIZE phase predicted: "if cascade retrieval correctly routes
-even 200 more images to the right Gauss map neighbor, we're at 50%."
-
-Result: 50.18%. The cascade correctly routed +161 images above brute
-Gauss kNN. The 50% milestone is reached.
-
----
-
 ## Files
 
 Code: `src/sstt_cifar10_cascade_gauss.c`
 This document: `docs/43-cascade-gauss-50pct.md`
-LMM analysis: `docs/gauss_lmm_synth.md`

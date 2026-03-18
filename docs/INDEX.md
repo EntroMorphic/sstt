@@ -13,7 +13,7 @@ see [`archived/README.md`](../archived/README.md) for context.
 | # | Title | Key Result |
 |---|-------|------------|
 | 01 | [sign_epi8 ternary multiply](01-sign-epi8-ternary-multiply.md) | 32-wide ternary ALU in one AVX2 instruction |
-| 02 | [Hot map: naive Bayes via ternary block frequencies](02-hot-map-cipher.md) | 73.23% at ~1 us, 451 KB L2-resident model |
+| 02 | [Hot map: naive Bayes via ternary block frequencies](02-hot-map-naive-bayes.md) | 73.23% at ~1 us, 451 KB L2-resident model |
 | 05 | [Background value discrimination](05-background-value-discrimination.md) | Per-channel BG constants; gradients 20% → 60-74% |
 | 06 | [Ternary gradient observers](06-ternary-gradient-observers.md) | 3-channel system: pixel + h-grad + v-grad |
 | 07 | [IG-weighted block voting](07-ig-weighted-block-voting.md) | +15.55pp in cascade context, closed-form from data |
@@ -55,8 +55,8 @@ see [`archived/README.md`](../archived/README.md) for context.
 | # | Title | Key Result |
 |---|-------|------------|
 | 29 | [Topological ranking](29-topological-ranking.md) | 97.11% — divergence + centroid + profile break the block-encoding ceiling |
-| 30 | [Eigenplane generalization](30-eigenplane-generalization-lmm.md) | Information vs invariance tension; histogram/curl/dot tested |
-| 31 | [Sequential field-theoretic ranking](31-sequential-field-ranking.md) | **97.31% MNIST, 85.81% Fashion** — the emerging algorithm |
+| 30 | [Eigenplane generalization](30-eigenplane-generalization.md) | Information vs invariance tension; histogram/curl/dot tested |
+| 31 | [Sequential field-theoretic ranking](31-sequential-field-ranking.md) | **97.27% MNIST, 85.81% Fashion** — the emerging algorithm |
 
 ## Experiment Files
 
@@ -72,13 +72,19 @@ All experiment source files in `src/`. Each is self-contained.
 | sstt_topo6.c | Dead zone + bucketing | Kalman already handles noise |
 | sstt_topo7.c | Chirality + quadrant divergence | 97.24%: spatial decomposition helps |
 | sstt_topo8.c | Grid resolution sweep | 97.27%: 2x4 MNIST, 3x3 Fashion |
-| sstt_topo9.c | Bayesian-CfC sequential | 97.31% MNIST, 85.81% Fashion |
+| sstt_topo9.c | Bayesian-CfC sequential | 97.27% MNIST, 85.81% Fashion |
 | sstt_error_profile.c | Feature-space error autopsy | Top-10 agree: 100-200x predictor |
 | sstt_gauss_map.c | Discrete Gauss map | 45+64 bin joint histogram |
 | sstt_gauss_delta.c | Ground-state delta encoding | +19 MNIST, +20 Fashion; "maps all the way down" not validated |
 | sstt_confidence_map.c | Quantized confidence map | 47% MI, 97.2% on Fashion confident 50% |
 | sstt_vote_route.c | Vote-phase free routing | 99.6% on easy 22%, zero ranking cost |
 | sstt_topo9_val.c | Proper val/holdout validation | Val-derived weights, holdout-only reporting |
+| sstt_cifar10_curvature.c | Second-order curvature | Distinguished rounded vs angular; 51% test slice |
+| sstt_cifar10_lagrangian.c | Discrete Curl operator | Identifies rotational energy; 26% alone, 39% combo |
+| sstt_cifar10_grid_tracer.c | Structural Particle Tracing | 4x4 grid Lagrangian skeleton; 18% with 64 floats |
+| sstt_dual_hot_map.c | Dual Hot Map (Pixel+Gauss) | 76.5% MNIST instantly; O(1) table lookup fusion |
+| sstt_router_v1.c | Three-Tier Router Prototype | Adaptive compute: 99.9% accuracy on 15% instantly |
+| sstt_benchmark_cifar10.c | Lagrangian Benchmark | Head-to-head Gauss vs Tracer vs Combo |
 
 ## Next Phase-Changes
 
@@ -104,64 +110,14 @@ All experiment source files in `src/`. Each is self-contained.
 | 38 | [CIFAR-10 full arc](38-cifar10-full-arc.md) | 42.05% via MT4 4-plane vote + full stack |
 | 39 | [Stereoscopic quantization](39-stereoscopic-quantization.md) | Multi-perspective fusion: 3 eyes → 41.18% Bayesian; new primitive |
 | 40 | [Hierarchical decomposition](40-hierarchical-decomposition.md) | Machine/animal binary: 81%; oracle ceiling 48.86% |
-| 41 | [Stereo + MT4 stack](41-stereo-stack-cifar10.md) | All 3 power sources: 44.48%; LMM predicted correctly |
-| 42 | [Gauss map CIFAR-10](42-gauss-map-cifar10.md) | 48.31% grid Gauss kNN — shape geometry beats texture |
+| 41 | [Stereo + MT4 stack](41-stereo-stack-cifar10.md) | All 3 power sources: 44.48%; correctly identified 3 mechanisms |
 | 43 | [Cascade Gauss — 50%](43-cascade-gauss-50pct.md) | **50.18%** stereo vote → RGB Gauss rank; pipeline reconnected |
+| 44 | [Architectural Consolidation](44-step-change-architectural-consolidation.md) | Four step-changes: Tiered Router, Curvature, Delta Map, Scaling |
+| 45 | [Second-Order Curvature](45-cifar10-second-order-curvature.md) | CIFAR-10 curvature and symmetry; ~51% on test slice |
+| 46 | [Lagrangian Vorticity (Curl)](46-discrete-lagrangian-vorticity.md) | Discrete Curl operator for topological junction detection |
+| 47 | [Structural Particle Tracing](47-structural-particle-tracing.md) | Lagrangian path-tracing for structural skeletons |
+| 48 | [Dual Hot Map — Fast Path](48-dual-hot-map-fast-path.md) | Fusing independent lookup tables for 76.5% MNIST accuracy |
+| 49 | [Three-Tier Router Design](49-tiered-router-design.md) | Architectural specification for adaptive compute per-image |
+| 50 | [Tiered Router Validation](50-tiered-router-validation.md) | Prototype achieves 99.9% accuracy on 15% of images instantly |
+| 51 | [Production Tiered Inference](51-production-ready-tiered-inference.md) | Consolidated 96.5% engine with adaptive compute tiers |
 
-CIFAR-10 experiment files in `src/`:
-
-| File | Experiment | Key finding |
-|------|-----------|-------------|
-| sstt_cifar10.c | Grayscale baseline | 33.76% Bayesian, pixel dot kills cascade |
-| sstt_cifar10_flat.c | Flattened RGB (32x96) | 36.58% Bayesian — color in blocks helps |
-| sstt_cifar10_grad.c | Gradient channel ablation | Pixel dot is the contaminant |
-| sstt_cifar10_mt4.c | MT4 81-level dot | Sweet spot: 81 levels > 3 levels > raw |
-| sstt_cifar10_stack.c | Full stack + RGB div | 41.24% — composition works |
-| sstt_cifar10_mt4vote.c | MT4 full-pipeline vote | 42.05% — 4-plane vote + dot + topo |
-| sstt_cifar10_full.c | Cascade autopsy | Mode C (60.5%) dominates, not Mode B |
-| sstt_cifar10_why.c | Per-class failure | deer↔frog, airplane↔ship: texture overlap |
-| sstt_cifar10_correlate.c | Feature-accuracy correlation | Brightness is #1 predictor; system classifies by photography |
-| sstt_cifar10_adaptive.c | Adaptive quantization | Cat +9.8pp; airplane -17pp; brightness is signal AND noise |
-| sstt_cifar10_dual.c | Dual quantization | Fixed+adaptive Bayesian: 40.20% — stereoscopic principle |
-| sstt_cifar10_stereo.c | 5-eye stereoscopic | 3 eyes optimal: 41.18%; diminishing returns past 3 |
-| sstt_cifar10_stereo_stack.c | Stereo + MT4 + topo | **44.48%** — all 3 power sources combined |
-| sstt_cifar10_binary.c | Machine/animal binary | 81% binary; oracle hierarchical 48.86% |
-| sstt_cifar10_edgemask.c | Edge-based background suppression | Gradient eyes: frog 77%, cat 29.4% on edge structure |
-| sstt_cifar10_gauss.c | Gauss map (sphere geometry) | **48.31%** grid Gauss kNN — new best, shape > texture |
-| sstt_cifar10_fused.c | Fused stereo + Gauss | Gauss alone beats all fusions; block system now weaker partner |
-| sstt_fashion_stereo.c | Fashion-MNIST stereoscopic | **86.12%** — stereo validates on Fashion (+0.44pp) |
-| sstt_cifar10_rawdot.c | Raw dot ceiling | 13.54% — quantization is a feature, not a loss |
-| sstt_cifar10_mt7vote.c | MT7 diminishing returns | 39.72% — more planes hurt past 4 |
-| sstt_cifar10_moe.c | MoE routing | +0.12pp marginal |
-| sstt_cifar10_propagate.c | Label propagation | Hurts — manifold doesn't respect classes |
-| sstt_cifar10_multiscale.c | Multi-scale blocks | +0.62pp Bayesian — scales are redundant |
-| sstt_cifar10_ternvbin.c | Ternary vs binary vs pentary | Pentary (5-level) best individual eye at 37.82% |
-| sstt_cifar10_binary_dig.c | Binary split deep dive | Horse worst at binary (74.9%); R-B balance is discriminator |
-| sstt_cifar10_cascade_gauss.c | Cascade: vote → Gauss rank | **50.18%** — texture retrieval + shape ranking |
-| sstt_cifar10_curvature.c | Second-order curvature | Running — results pending |
-
-## kNN Dilution Prevention (prior session)
-
-| # | Title | Key Result |
-|---|-------|------------|
-| 38* | [kNN dilution integration](38-knndilute-integration.md) | Mode C prevention: skip kNN when rank-1 confident |
-| 39* | [Method 4 tuning](39-method4-tuning-real-mnist.md) | Tuned on real MNIST data |
-
-*Numbering collision with CIFAR-10 contributions 38-39; these are from a prior session.
-
-## Meta
-
-| # | Title |
-|---|-------|
-| 26 | [Audit: novel, useful, fluff, understated](26-audit-novel-useful-fluff-understated.md) |
-| 27 | [Remediation plan](27-remediation-plan.md) |
-| 34 | [Independent audit: novel, useful, fluff, understated](34-independent-audit.md) |
-
-### LMM Analyses
-
-| Analysis | Key Finding |
-|----------|------------|
-| [CIFAR-10 LMM](cifar10_lmm_synth.md) | Brightness is #1 confound → adaptive quantization → stereoscopic principle |
-| [Stereo LMM](stereo_lmm_synth.md) | Three power sources → predicted 43-44% → actual 44.48% |
-| [Gauss map LMM](gauss_lmm_synth.md) | Restore pipeline: texture retrieval → shape ranking → predicted 50% → actual 50.18% |
-| [Session retrospective LMM](session_lmm_synth.md) | The ceiling is always in the combination; second-order curvature is next |

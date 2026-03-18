@@ -127,7 +127,7 @@ static double centroid_acc_clean;
 static uint8_t *train_sigs;     /* [TRAIN_N * SIG_PAD], aligned */
 static uint8_t *test_sigs;      /* [TEST_N * SIG_PAD],  aligned */
 
-/* SDF cipher data */
+/* SDF Hot Map data */
 static int8_t *sdf_raw_train;    /* [TRAIN_N * PADDED], raw SDF values */
 static int8_t *sdf_raw_test;     /* [TEST_N * PADDED] */
 static int8_t *sdf_tern_train;   /* [TRAIN_N * PADDED], SDF ternary at best T */
@@ -981,7 +981,7 @@ static void test_hot_map(void) {
         save_hot_map(hm_path);
         printf("  Built and saved to %s\n", hm_path);
     } else {
-        printf("  Loaded from %s (persistent cipher)\n", hm_path);
+        printf("  Loaded from %s (persistent Hot Map)\n", hm_path);
     }
     double tb1 = now_sec();
     printf("  Size: %zu KB (L2-resident)\n", sizeof(hot_map) / 1024);
@@ -1220,8 +1220,8 @@ static void test_tst(double nn_acc, double nn_time) {
  *  SDF representation.
  *
  *  Pipeline: ternary image → raw SDF → quantize to ternary → block
- *  signatures → hot map cipher. Same 451KB table, different address
- *  space. Dual cipher = pixel + SDF hot maps combined (902KB).
+ *  signatures → hot map Hot Map. Same 451KB table, different address
+ *  space. Dual Hot Map = pixel + SDF hot maps combined (902KB).
  * ================================================================ */
 
 /*
@@ -1458,7 +1458,7 @@ static inline int sdf_hot_classify(const uint8_t *sdf_sig) {
     return best;
 }
 
-/* Dual cipher: pixel hot map + SDF hot map combined */
+/* Dual Hot Map: pixel hot map + SDF hot map combined */
 static inline int dual_classify(const uint8_t *px_sig, const uint8_t *sdf_sig) {
     __m256i acc_lo = _mm256_setzero_si256();
     __m256i acc_hi = _mm256_setzero_si256();
@@ -1491,7 +1491,7 @@ static inline int dual_classify(const uint8_t *px_sig, const uint8_t *sdf_sig) {
     return best;
 }
 
-static void test_sdf_cipher(void) {
+static void test_sdf_hot_map(void) {
     /* Step 1: compute raw SDF for all images */
     printf("  Computing SDF (two-pass Chamfer distance transform)...\n");
     double t0 = now_sec();
@@ -1505,7 +1505,7 @@ static void test_sdf_cipher(void) {
     sdf_train_sigs = (uint8_t *)aligned_alloc(32, (size_t)TRAIN_N * SIG_PAD);
     sdf_test_sigs  = (uint8_t *)aligned_alloc(32, (size_t)TEST_N  * SIG_PAD);
     if (!sdf_tern_train || !sdf_tern_test || !sdf_train_sigs || !sdf_test_sigs) {
-        fprintf(stderr, "ERROR: SDF cipher alloc failed\n"); exit(1);
+        fprintf(stderr, "ERROR: SDF Hot Map alloc failed\n"); exit(1);
     }
 
     /* Step 2: threshold sweep */
@@ -1572,7 +1572,7 @@ static void test_sdf_cipher(void) {
         }
     }
 
-    /* Step 3: rebuild with best threshold for dual cipher */
+    /* Step 3: rebuild with best threshold for dual Hot Map */
     printf("\n  Best SDF threshold: T=%d (%.2f%%)\n", best_t, best_sdf_acc * 100.0);
 
     /* Re-quantize at best T if not already current */
@@ -1588,7 +1588,7 @@ static void test_sdf_cipher(void) {
         build_sdf_hot_map_from(sdf_train_sigs, TRAIN_N);
     }
 
-    /* Step 4: dual cipher (pixel + SDF) */
+    /* Step 4: dual Hot Map (pixel + SDF) */
     int correct_dual = 0;
     double td0 = now_sec();
     for (int i = 0; i < TEST_N; i++) {
@@ -1936,7 +1936,7 @@ static void test_combined(double nn_acc, double nn_time) {
 static void test_gradient_sdf(void) {
     /* ---- H1: Gradient Hot Maps (direct, no SDF) ---- */
     printf("  --- H1: Gradient Hot Maps ---\n");
-    printf("  H-Grad and V-Grad ternary fed through same hot map cipher.\n");
+    printf("  H-Grad and V-Grad ternary fed through same hot map Hot Map.\n");
     printf("  Background skip: bv=%d (block_encode(0,0,0) = flat region)\n\n",
            BG_GRAD);
 
@@ -2182,10 +2182,10 @@ static void test_gradient_sdf(void) {
 
     /* ---- H3: Full Ensemble ---- */
     printf("  --- H3: Full Ensemble ---\n");
-    printf("  Pixel + Pixel-SDF + H-Grad-SDF + V-Grad-SDF (4 ciphers)\n\n");
+    printf("  Pixel + Pixel-SDF + H-Grad-SDF + V-Grad-SDF (4 Hot Maps)\n\n");
 
     /* Need pixel SDF test sigs — rebuild if freed */
-    /* test_sdf_cipher frees raw SDF but keeps sdf_test_sigs alive */
+    /* test_sdf_hot_map frees raw SDF but keeps sdf_test_sigs alive */
     int correct_dual = 0, correct_4way = 0;
     int correct_px_3grad = 0;
     for (int i = 0; i < TEST_N; i++) {
@@ -2224,7 +2224,7 @@ static void test_gradient_sdf(void) {
                 _mm256_load_si256((const __m256i *)sdf_hot_map[k][bv] + 1));
         }
 
-        /* Dual cipher result (pixel + pixel SDF) */
+        /* Dual Hot Map result (pixel + pixel SDF) */
         {
             uint32_t cv[CLS_PAD] __attribute__((aligned(32)));
             _mm256_store_si256((__m256i *)cv, dual_lo);
@@ -2299,12 +2299,12 @@ static void test_gradient_sdf(void) {
         }
     }
 
-    printf("  Dual cipher (pixel + pixel-SDF):     %.2f%%\n",
+    printf("  Dual Hot Map (pixel + pixel-SDF):     %.2f%%\n",
            100.0 * correct_dual / TEST_N);
     printf("  Pixel + H-Grad-SDF + V-Grad-SDF:     %.2f%% (%+.2f pp vs dual)\n",
            100.0 * correct_px_3grad / TEST_N,
            100.0 * (correct_px_3grad - correct_dual) / TEST_N);
-    printf("  4-cipher (px + px-SDF + hg-SDF + vg-SDF): %.2f%% (%+.2f pp vs dual)\n\n",
+    printf("  4-Hot Map (px + px-SDF + hg-SDF + vg-SDF): %.2f%% (%+.2f pp vs dual)\n\n",
            100.0 * correct_4way / TEST_N,
            100.0 * (correct_4way - correct_dual) / TEST_N);
 
@@ -2950,7 +2950,7 @@ int main(int argc, char **argv) {
     puts("  SDF transforms appearance into topology.");
     puts("  Thick and thin '7' collapse to the same SDF skeleton.");
     puts("  Lower entropy → smaller codebook → better compression.\n");
-    test_sdf_cipher();
+    test_sdf_hot_map();
 
     /* Test G: Combined Powers */
     puts("\n--- Test G: Combined Powers (Pixel + SDF Fusion) ---");
@@ -2991,7 +2991,7 @@ int main(int argc, char **argv) {
     printf("  Indexed 1-NN:          see Test C table above\n");
     printf("  Hot map:               see Test D above\n");
     printf("  TST cascade:           see Test E above\n");
-    printf("  SDF cipher:            see Test F above\n");
+    printf("  SDF Hot Map:            see Test F above\n");
     printf("  Combined powers:       see Test G above\n");
     printf("  Gradient-SDF + TST:    see Test H above\n");
 

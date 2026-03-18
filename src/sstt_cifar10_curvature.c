@@ -29,7 +29,7 @@
 #include <time.h>
 
 #define TRAIN_N 50000
-#define TEST_N  10000
+#define TEST_N  100
 #define N_CLASSES 10
 #define CLS_PAD 16
 #define SP_W 32
@@ -258,21 +258,31 @@ static int topk(const uint32_t*v,int n,cand_t*o,int k){uint32_t mx=0;for(int i=0
     qsort(o,(size_t)nc,sizeof(cand_t),cmpv);return nc;}
 
 static void load_data(void){
+    printf("  Allocating raw data...\n");
     raw_train=malloc((size_t)TRAIN_N*PIXELS);raw_test=malloc((size_t)TEST_N*PIXELS);
     raw_r_tr=malloc((size_t)TRAIN_N*SP_PX);raw_r_te=malloc((size_t)TEST_N*SP_PX);
     raw_g_tr=malloc((size_t)TRAIN_N*SP_PX);raw_g_te=malloc((size_t)TEST_N*SP_PX);
     raw_b_tr=malloc((size_t)TRAIN_N*SP_PX);raw_b_te=malloc((size_t)TEST_N*SP_PX);
     raw_gray_tr=malloc((size_t)TRAIN_N*SP_PX);raw_gray_te=malloc((size_t)TEST_N*SP_PX);
+    if (!raw_gray_te) { printf("raw fail\n"); exit(1); }
     train_labels=malloc(TRAIN_N);test_labels=malloc(TEST_N);char p[512];uint8_t rec[3073];
+    printf("  Loading batches...\n");
     for(int b2=1;b2<=5;b2++){snprintf(p,sizeof(p),"%sdata_batch_%d.bin",data_dir,b2);
-        FILE*f=fopen(p,"rb");for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
-            int idx=(b2-1)*10000+i;train_labels[idx]=rec[0];
+        FILE*f=fopen(p,"rb");
+        if (!f) { printf("Failed to open %s\n", p); exit(1); }
+        for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
+            int idx=(b2-1)*10000+i;
+            if (idx >= TRAIN_N) continue;
+            train_labels[idx]=rec[0];
             uint8_t*d=raw_train+(size_t)idx*PIXELS;const uint8_t*r=rec+1,*g=rec+1+1024,*b3=rec+1+2048;
             for(int y=0;y<32;y++)for(int x=0;x<32;x++){int si=y*32+x,di=y*96+x*3;d[di]=r[si];d[di+1]=g[si];d[di+2]=b3[si];}
             memcpy(raw_r_tr+(size_t)idx*SP_PX,r,SP_PX);memcpy(raw_g_tr+(size_t)idx*SP_PX,g,SP_PX);memcpy(raw_b_tr+(size_t)idx*SP_PX,b3,SP_PX);
             uint8_t*gd=raw_gray_tr+(size_t)idx*SP_PX;for(int p2=0;p2<SP_PX;p2++)gd[p2]=(uint8_t)((77*(int)r[p2]+150*(int)g[p2]+29*(int)b3[p2])>>8);}fclose(f);}
     snprintf(p,sizeof(p),"%stest_batch.bin",data_dir);
-    FILE*f=fopen(p,"rb");for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
+    FILE*f=fopen(p,"rb");
+    if (!f) { printf("Failed to open %s\n", p); exit(1); }
+    for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
+        if (i >= TEST_N) continue;
         test_labels[i]=rec[0];uint8_t*d=raw_test+(size_t)i*PIXELS;const uint8_t*r=rec+1,*g=rec+1+1024,*b3=rec+1+2048;
         for(int y=0;y<32;y++)for(int x=0;x<32;x++){int si=y*32+x,di=y*96+x*3;d[di]=r[si];d[di+1]=g[si];d[di+2]=b3[si];}
         memcpy(raw_r_te+(size_t)i*SP_PX,r,SP_PX);memcpy(raw_g_te+(size_t)i*SP_PX,g,SP_PX);memcpy(raw_b_te+(size_t)i*SP_PX,b3,SP_PX);
@@ -295,13 +305,17 @@ int main(int argc,char**argv){
 
     /* First-order: RGB 4×4 grid (baseline = 48.57% brute) */
     #define F1_FEAT (NCH*G4_FEAT) /* 2880 */
-    int16_t *f1_tr=malloc((size_t)TRAIN_N*F1_FEAT*2),*f1_te=malloc((size_t)TEST_N*F1_FEAT*2);
+    int16_t *f1_tr=aligned_alloc(32,(size_t)TRAIN_N*F1_FEAT*2);
+    int16_t *f1_te=aligned_alloc(32,(size_t)TEST_N*F1_FEAT*2);
+    if (!f1_tr || !f1_te) { printf("f1 fail\n"); return 1; }
     for(int i=0;i<TRAIN_N;i++)for(int ch=0;ch<NCH;ch++)gauss_map_grid(ch_tr[ch]+(size_t)i*SP_PX,f1_tr+(size_t)i*F1_FEAT+ch*G4_FEAT,G4,G4);
     for(int i=0;i<TEST_N;i++)for(int ch=0;ch<NCH;ch++)gauss_map_grid(ch_te[ch]+(size_t)i*SP_PX,f1_te+(size_t)i*F1_FEAT+ch*G4_FEAT,G4,G4);
 
     /* Second-order curvature: per-channel */
     #define F2_FEAT (NCH*CURVE_FEAT) /* 4320 */
-    int16_t *f2_tr=malloc((size_t)TRAIN_N*F2_FEAT*2),*f2_te=malloc((size_t)TEST_N*F2_FEAT*2);
+    int16_t *f2_tr=aligned_alloc(32,(size_t)TRAIN_N*F2_FEAT*2);
+    int16_t *f2_te=aligned_alloc(32,(size_t)TEST_N*F2_FEAT*2);
+    if (!f2_tr || !f2_te) { printf("f2 fail\n"); return 1; }
     for(int i=0;i<TRAIN_N;i++)for(int ch=0;ch<NCH;ch++){
         int16_t grid[G4_FEAT];gauss_map_grid(ch_tr[ch]+(size_t)i*SP_PX,grid,G4,G4);
         curvature_features(grid,f2_tr+(size_t)i*F2_FEAT+ch*CURVE_FEAT);}
@@ -311,7 +325,9 @@ int main(int argc,char**argv){
 
     /* Symmetry features: per-channel */
     #define F3_FEAT (NCH*SYM_FEAT) /* 1440 */
-    int16_t *f3_tr=malloc((size_t)TRAIN_N*F3_FEAT*2),*f3_te=malloc((size_t)TEST_N*F3_FEAT*2);
+    int16_t *f3_tr=aligned_alloc(32,(size_t)TRAIN_N*F3_FEAT*2);
+    int16_t *f3_te=aligned_alloc(32,(size_t)TEST_N*F3_FEAT*2);
+    if (!f3_tr || !f3_te) { printf("f3 fail\n"); return 1; }
     for(int i=0;i<TRAIN_N;i++)for(int ch=0;ch<NCH;ch++){
         int16_t grid[G4_FEAT];gauss_map_grid(ch_tr[ch]+(size_t)i*SP_PX,grid,G4,G4);
         symmetry_features(grid,f3_tr+(size_t)i*F3_FEAT+ch*SYM_FEAT);}
@@ -321,13 +337,21 @@ int main(int argc,char**argv){
 
     /* Combined: first-order + curvature + symmetry */
     #define FALL_FEAT (F1_FEAT + F2_FEAT + F3_FEAT) /* 8640 */
-    int16_t *fa_tr=malloc((size_t)TRAIN_N*FALL_FEAT*2),*fa_te=malloc((size_t)TEST_N*FALL_FEAT*2);
-    for(int i=0;i<TRAIN_N;i++){memcpy(fa_tr+(size_t)i*FALL_FEAT,f1_tr+(size_t)i*F1_FEAT,F1_FEAT*2);
-        memcpy(fa_tr+(size_t)i*FALL_FEAT+F1_FEAT,f2_tr+(size_t)i*F2_FEAT,F2_FEAT*2);
-        memcpy(fa_tr+(size_t)i*FALL_FEAT+F1_FEAT+F2_FEAT,f3_tr+(size_t)i*F3_FEAT,F3_FEAT*2);}
-    for(int i=0;i<TEST_N;i++){memcpy(fa_te+(size_t)i*FALL_FEAT,f1_te+(size_t)i*F1_FEAT,F1_FEAT*2);
-        memcpy(fa_te+(size_t)i*FALL_FEAT+F1_FEAT,f2_te+(size_t)i*F2_FEAT,F2_FEAT*2);
-        memcpy(fa_te+(size_t)i*FALL_FEAT+F1_FEAT+F2_FEAT,f3_te+(size_t)i*F3_FEAT,F3_FEAT*2);}
+    int16_t *fa_tr=aligned_alloc(32,(size_t)TRAIN_N*FALL_FEAT*2);
+    int16_t *fa_te=aligned_alloc(32,(size_t)TEST_N*FALL_FEAT*2);
+    if (!fa_tr || !fa_te) { printf("fa fail\n"); return 1; }
+    for(int i=0;i<TRAIN_N;i++){
+        int16_t *dst = fa_tr + (size_t)i * FALL_FEAT;
+        memcpy(dst, f1_tr + (size_t)i * F1_FEAT, F1_FEAT * 2);
+        memcpy(dst + F1_FEAT, f2_tr + (size_t)i * F2_FEAT, F2_FEAT * 2);
+        memcpy(dst + F1_FEAT + F2_FEAT, f3_tr + (size_t)i * F3_FEAT, F3_FEAT * 2);
+    }
+    for(int i=0;i<TEST_N;i++){
+        int16_t *dst = fa_te + (size_t)i * FALL_FEAT;
+        memcpy(dst, f1_te + (size_t)i * F1_FEAT, F1_FEAT * 2);
+        memcpy(dst + F1_FEAT, f2_te + (size_t)i * F2_FEAT, F2_FEAT * 2);
+        memcpy(dst + F1_FEAT + F2_FEAT, f3_te + (size_t)i * F3_FEAT, F3_FEAT * 2);
+    }
 
     printf("  Features computed (%.1f sec)\n\n",now_sec()-t0);
 

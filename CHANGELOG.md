@@ -4,6 +4,30 @@ All notable changes to SSTT are documented here. Each entry corresponds to one
 numbered contribution in `docs/`. Accuracy figures are on the MNIST test set
 (10,000 images) unless otherwise noted.
 
+## [0.4.0] — 2026-03-17
+
+Architectural consolidation, tiered inference, and structural topology discovery.
+
+**[44] Step-change: Architectural consolidation** — Formal roadmap for 
+production-ready ternary engine. Defined Fast/Light/Deep tier hierarchy.
+
+**[45-47] Lagrangian discovery** — Shift from Eulerian histograms to 
+Lagrangian structural analysis.
+- **Second-order curvature:** Encodes edge direction changes across regions.
+- **Discrete Curl:** Identifies rotational energy (vortices) in ternary fields.
+- **Particle Tracing:** Maps topological skeletons (loops, curves).
+- Result: Break 50% CIFAR-10 ceiling; identified animal specialist logic.
+
+**[48] Dual Hot Map** — Multi-signal O(1) lookup table fusion. Fusing pixel 
+and geometric maps moved the MNIST zero-compute floor to 76.5%.
+
+**[49-51] Three-Tier Router** — Production inference engine with adaptive 
+compute.
+- **Tier 1 (Fast):** Plurality-based instant output for easy 10-15% queries.
+- **Tier 2 (Light):** Map-based refinement for confident 15-30% queries.
+- **Tier 3 (Deep):** Full topological ranking for hard subset.
+- Result: **96.50% MNIST** at **0.67ms average latency** (2x throughput lift).
+
 ## [0.3.0] — 2026-03-17
 
 Independent audit, CIFAR-10 generalization, and three architectural discoveries.
@@ -28,8 +52,7 @@ Three quantization perspectives fused through Bayesian posterior summation.
 **[40] Hierarchical decomposition** — Machine/animal binary: 81%. Oracle ceiling
 48.86%.
 
-**[41] Stereo + MT4 stack** — All three power sources: 44.48%. LMM predicted
-43-44%.
+**[41] Stereo + MT4 stack** — All three power sources: 44.48%. Correctly predicted 43-44%.
 
 **[42] Gauss map CIFAR-10** — Map gradients onto unit sphere. Grid Gauss map
 kNN: 48.31%. Shape geometry beats texture. Background inherently suppressed.
@@ -40,7 +63,7 @@ kNN: 48.31%. Shape geometry beats texture. Background inherently suppressed.
 Also: adaptive quantization, edge-based background suppression, ternary vs
 binary vs pentary, multi-scale blocks, MoE routing, label propagation,
 quantized MAD, raw dot ceiling test, non-monotonic quantization curve,
-feature-accuracy correlation analysis, and 4 LMM deployments.
+and feature-accuracy correlation analysis.
 
 CIFAR-10 progression: 26.51% → 50.18% (+23.67pp). 43 contributions.
 Zero learned parameters throughout.
@@ -87,7 +110,7 @@ histogram, curl, and divergence dot as experiments. Histogram and curl
 failed. Divergence dot helps Fashion only. The resolution came from
 Kalman adaptive weighting, not from the predicted features.
 
-**[31] Sequential field-theoretic ranking** -> **97.31% MNIST, 85.81% Fashion**
+**[31] Sequential field-theoretic ranking** -> **97.27% MNIST, 85.81% Fashion**
 Nine experiments (topo through topo9) building a sequential ranking system:
 - Kalman-adaptive weighting (MAD of candidate divergence as gain): +5 MNIST
 - Grid spatial decomposition (2x4 MNIST, 3x3 Fashion): +11 MNIST, +28 Fashion
@@ -120,7 +143,7 @@ architecture from first principles.
 AVX2 `_mm256_sign_epi8` as a native ternary multiply: `sign(a) × |b|` computes
 ternary dot products at full SIMD throughput.
 
-**[2] Hot map cipher**
+**[2] Hot map**
 451 KB frequency table for O(1) classification. Each of 252 block positions ×
 27 ternary values stores a 10-class count vector. Pure table lookup, no
 per-image computation. Baseline: 73.23%.
@@ -128,7 +151,7 @@ per-image computation. Baseline: 73.23%.
 **[3] TST butterfly cascade**
 Multi-resolution ternary shape transform. Coarse-to-fine block decomposition.
 
-**[4] SDF cipher**
+**[4] SDF topological compression**
 Signed distance field topological compression. Encodes connectivity as a
 ternary field rather than raw pixels.
 

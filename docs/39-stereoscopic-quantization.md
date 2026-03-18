@@ -23,24 +23,14 @@ correctly and incorrectly classified images. Key findings:
 - **The system classifies by photographic properties** (brightness,
   color palette, contrast), not by object content (shape, pose).
 
-### The LMM analysis
+### Adaptive Quantization Analysis
 
-Applied the Lincoln Manifold Method to the correlation findings:
+The key insight is that **adaptive quantization converts the
+representation from absolute brightness bins to relative structure
+bins.** This is the same principle as "quantization is a feature"
+from the raw dot experiment, taken further.
 
-- **RAW**: The ternary quantization encodes absolute brightness.
-  Two images of the same cat — one in sunlight, one in shadow —
-  produce completely different ternary patterns.
-- **NODES**: Tension T2 identified: "Color is both signal and noise."
-  Fixed thresholds help airplane (blue sky) but hurt cat (variable
-  lighting).
-- **REFLECT**: The key insight: **adaptive quantization converts the
-  representation from absolute brightness bins to relative structure
-  bins.** This is the same principle as "quantization is a feature"
-  from the raw dot experiment, taken further.
-- **SYNTHESIZE**: Prescribed adaptive P33/P67 quantization as the
-  highest-leverage intervention.
-
-### The adaptive quantization experiment
+Adaptive P33/P67 quantization:
 
 | Class | Fixed 85/170 | Adaptive P33/P67 | Delta |
 |-------|-------------|------------------|-------|
@@ -50,8 +40,9 @@ Applied the Lincoln Manifold Method to the correlation findings:
 | ship | **50.2%** | 37.8% | **-12.4pp** |
 
 Adaptive helps classes where brightness is noise (cat, automobile) but
-hurts classes where brightness IS the signal (airplane, ship). The LMM
-correctly predicted this tension.
+hurts classes where brightness IS the signal (airplane, ship). This
+confirms the tension between scene-level signal and object-level
+structure.
 
 ### The stereoscopic insight
 
@@ -244,11 +235,5 @@ Experiments:
 - `src/sstt_cifar10_adaptive.c` — Adaptive quantization (3 variants)
 - `src/sstt_cifar10_dual.c` — Dual quantization (fixed + adaptive)
 - `src/sstt_cifar10_stereo.c` — Full 5-eye stereoscopic experiment
-
-LMM analysis:
-- `docs/cifar10_lmm_raw.md` — Unfiltered thinking
-- `docs/cifar10_lmm_nodes.md` — Key points and tensions
-- `docs/cifar10_lmm_reflect.md` — Underlying structure and leverage
-- `docs/cifar10_lmm_synth.md` — Action plan
 
 This document: `docs/39-stereoscopic-quantization.md`

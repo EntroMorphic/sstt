@@ -3,7 +3,7 @@
 ## Summary
 
 A series of nine experiments (topo through topo9) built a ranking
-system that pushes MNIST from 96.20% to **97.31%** and Fashion-MNIST
+system that pushes MNIST to **97.27%** and Fashion-MNIST
 from 83.66% to **85.81%** — with zero learned parameters, integer
 arithmetic, and no data beyond what the cascade already computes.
 
@@ -198,22 +198,14 @@ Bayesian posterior becomes the CfC's initial state.
 | Method | MNIST | Fashion |
 |--------|-------|---------|
 | Static (topo8) | 97.27% (273) | 84.80% (1520) |
-| Bayesian seq (A) | 97.30% (270) | **85.81% (1419)** |
+| Bayesian seq (A) | 97.27% (273) | **85.81% (1419)** |
 | CfC alone (B) | 97.27% (273) | 85.06% (1494) |
-| **Pipeline A→B (C)** | **97.31% (269)** | 85.77% (1423) |
+| **Pipeline A→B (C)** | 97.27% (273) | 85.77% (1423) |
 
-Fashion per-pair improvements (pipeline vs static):
-```
-0↔6 (shirt/T-shirt):    276 → 249 (-27)
-2↔4 (pullover/coat):    217 → 176 (-41)
-2↔6 (pullover/shirt):   239 → 219 (-20)
-```
-
-**The CfC alone adds nothing on either dataset.** But with the Bayesian
-prior (pipeline), it contributes +1 on MNIST. The Bayesian sequential
-is the dominant innovation on Fashion: processing 15 candidates with
-aggressive decay (S=2) gives the top-ranked candidates dramatically
-more influence.
+**Sequential processing provides no benefit on MNIST.** While earlier
+tests suggested a +0.03pp gain, proper val/holdout validation (Doc 35)
+confirmed this as noise from test-set search. On Fashion-MNIST, however,
+the benefit is significant: +1.01pp.
 
 **Why sequential beats static:** The static approach computes a score
 for each candidate, sorts, and takes the top-3 for majority vote. All
@@ -295,8 +287,8 @@ data has spatial structure and differential quantities are computable.
 | + Divergence (Green's theorem) | 97.11% (289) | 84.24% (1576) |
 | + Kalman adaptive | 97.16% (284) | 84.52% (1548) |
 | + Grid decomposition | 97.27% (273) | 84.80% (1520) |
-| + Sequential Bayesian-CfC | **97.31% (269)** | **85.81% (1419)** |
-| **Total improvement** | **+1.11pp (+111 errors)** | **+2.15pp (+215 errors)** |
+| + Sequential Bayesian-CfC | 97.27% (273) | **85.81% (1419)** |
+| **Total improvement** | **+1.07pp (+107 errors)** | **+2.15pp (+215 errors)** |
 
 All with zero learned parameters. All computed from the gradient field
 that was already in memory.
@@ -448,4 +440,4 @@ correctly) is itself a mappable quantity.
 - Contribution 22: Bytepacked cascade (vote pipeline)
 - Contribution 23: Cascade autopsy (error diagnosis)
 - Contribution 29: Topological ranking (base features)
-- Contribution 30: Eigenplane LMM pass (generalization analysis)
+- Contribution 30: Eigenplane generalization analysis (generalization analysis)

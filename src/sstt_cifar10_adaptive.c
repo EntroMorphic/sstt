@@ -453,7 +453,8 @@ int main(int argc, char **argv) {
     run_experiment("Exp 3: Per-channel adaptive P33/P67", &pl_perch, 1);
 
     printf("\n=== SUMMARY ===\n");
-    printf("  If adaptive > fixed: brightness was the confound. LMM analysis confirmed.\n");
+     printf("  If adaptive > fixed: brightness was the confound.\n");
+
     printf("  If adaptive <= fixed: representation ceiling is scale/shape, not lighting.\n");
 
     printf("\nTotal: %.1f sec\n", now_sec() - t0);

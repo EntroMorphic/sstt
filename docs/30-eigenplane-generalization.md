@@ -11,7 +11,7 @@ divergence field?
 
 ---
 
-## Phase 1: RAW
+## Exploration: Information vs Invariance
 
 The divergence feature works on both datasets at the same weight. That's
 the strongest empirical signal in the whole project — nothing else has
@@ -152,7 +152,7 @@ more signal than the two-scalar summary.
 
 ---
 
-## Phase 2: NODES
+## Proposed Approaches
 
 ### Node 1: The Divergence Dot Product (Baseline Experiment)
 
@@ -303,7 +303,7 @@ seams. Worth testing alongside eigenplane approaches.
 
 ---
 
-## Phase 3: REFLECT
+## Architectural Analysis
 
 ### Core Insight
 
@@ -399,7 +399,7 @@ complementary information.
 
 ---
 
-## Phase 4: SYNTHESIZE
+## Experimental Plan
 
 ### Architecture: Three Experiments in Priority Order
 

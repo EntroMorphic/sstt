@@ -150,20 +150,6 @@ Zero learned parameters throughout.
 
 ---
 
-## LMM Validation
-
-The REFLECT phase (stereo_lmm_reflect.md) predicted:
-
-> "Prediction: 43-44%. The stereo voting would retrieve different
-> (better) candidates than single-eye voting. The MT4 ranking would
-> order them better than Bayesian alone. The combined posterior would
-> score them with more evidence than single-eye Bayesian."
-
-Result: 44.48%. The LMM correctly identified the mechanism and
-predicted the magnitude.
-
----
-
 ## Files
 
 Code: `src/sstt_cifar10_stereo_stack.c`
