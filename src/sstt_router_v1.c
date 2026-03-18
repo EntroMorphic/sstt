@@ -100,6 +100,7 @@ static int compute_mad(const cand_t*cands,int nc){if(nc<3)return 1000;int16_t va
 
 int main(int argc, char** argv) {
     if(argc > 1) data_dir = argv[1];
+    int is_fashion = strstr(data_dir, "fashion") != NULL;
     load_data();
     tern_train = aligned_alloc(32, (size_t)TRAIN_N*PADDED); tern_test = aligned_alloc(32, (size_t)TEST_N*PADDED);
     hgrad_train = aligned_alloc(32, (size_t)TRAIN_N*PADDED); hgrad_test = aligned_alloc(32, (size_t)TEST_N*PADDED);
@@ -161,14 +162,19 @@ int main(int argc, char** argv) {
         int top_count = counts[best_c];
 
         int prediction = -1;
-        if (top_count >= 198) {
+        int t2_thresh = is_fashion ? 180 : 180;
+        int t1_thresh = is_fashion ? 198 : 198;
+
+        if (top_count >= t1_thresh) {
             prediction = best_c; t1_count++; if(prediction == test_labels[i]) t1_corr++;
-        } else if (top_count >= 180) {
+        } else if (top_count >= t2_thresh) {
             uint32_t scores[N_CLASSES] = {0};
             uint8_t psig2[N_BLOCKS], gsig2[TOTAL_BINS];
             get_px_sig(tern_test + (size_t)i*PADDED, psig2); get_gm_sig(hgrad_test + (size_t)i*PADDED, vgrad_test + (size_t)i*PADDED, gsig2);
             for(int k=0;k<N_BLOCKS;k++) if(psig2[k]!=0) for(int c=0;c<10;c++) scores[c]+=px_map[k][psig2[k]][c];
-            for(int k=0;k<TOTAL_BINS;k++) if(qc(gsig2[k])!=0) for(int c=0;c<10;c++) scores[c]+=gm_map[k][qc(gsig2[k])][c]/2;
+            
+            float gm_weight = is_fashion ? 1.0f : 0.5f;
+            for(int k=0;k<TOTAL_BINS;k++) if(qc(gsig2[k])!=0) for(int c=0;c<10;c++) scores[c]+=(uint32_t)(gm_map[k][qc(gsig2[k])][c] * gm_weight);
             prediction = 0; for(int c=1;c<10;c++) if(scores[c] > scores[prediction]) prediction = c;
             t2_count++; if(prediction == test_labels[i]) t2_corr++;
         } else {
