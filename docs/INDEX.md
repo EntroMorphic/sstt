@@ -127,4 +127,5 @@ All experiment source files in `src/`. Each is self-contained.
 | 56 | [LMM: Findings Meta-Analysis](lmm/sstt_findings_synth.md) | Architectural reduction and the "integrated ternary engine" plan |
 | 57 | [Taylor Jet Space Classification](57-taylor-jet-space.md) | 2nd-order surface primitives (Ridges/Saddles) for local geometry |
 | 58 | [Taylor and Navier-Stokes Autopsy](58-taylor-navier-stokes-autopsy.md) | Differential vs Integral measures; failure of fluid-dynamics on trits |
+| 59 | [Hierarchical Geometric Scaling](59-hierarchical-geometric-scaling.md) | Multi-scale Bayesian fusion for high-res texture robustness |
 

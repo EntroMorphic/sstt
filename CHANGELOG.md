@@ -28,11 +28,15 @@ compute.
 - **Tier 3 (Deep):** Full topological ranking for hard subset.
 - Result: **96.50% MNIST** at **0.67ms average latency** (2x throughput lift).
 
-**[52] Scaling Framework (224x224)** — Validated Sparse Training + 
-Interpolation (Spline-equivalent) for high-resolution scaling.
-- Achieved **16x model compression** with **98.5% accuracy retention**.
-- Demonstrates path to sub-millisecond high-res inference while 
-  maintaining cache-residency.
+**[52, 55, 59] Scaling Framework (224x224)** — High-resolution ternary 
+inference path.
+- Validated **Sparse Training + Interpolation** for 16x model compression.
+- Proved **Geometric Uniformity** is superior to variance-guided sampling 
+  (negative result [55]).
+- Implemented **Hierarchical Scaling** (Level-0/Level-1 fusion) to improve 
+  texture robustness.
+- Achieved **0.14ms latency** at 224x224 resolution while maintaining 
+  cache-residency.
 
 ## [0.3.0] — 2026-03-17
 
