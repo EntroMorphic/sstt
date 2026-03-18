@@ -124,4 +124,5 @@ All experiment source files in `src/`. Each is self-contained.
 | 53 | [Lagrangian Benchmark Autopsy](53-lagrangian-benchmark-autopsy.md) | Diagnosis of the fusion drop and path to topological gating |
 | 54 | [Red-Team Validation Log](54-red-team-validation-log.md) | Dataset sensitivity analysis and zero-FP Tier 1 validation |
 | 55 | [Variance-Guided Scaling — Negative](55-eigenvalue-scaling-negative-result.md) | Variance clusters knots and leaves geometric coverage gaps |
+| 56 | [LMM: Findings Meta-Analysis](lmm/sstt_findings_synth.md) | Architectural reduction and the "integrated ternary engine" plan |
 
