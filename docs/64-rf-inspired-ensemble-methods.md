@@ -374,3 +374,80 @@ Tests whether bagged retrieval is additive with topological ranking.
    must change — which motivates Experiment 2.
 
 ### Status: COMPLETE. Proceed to Experiment 2.
+
+---
+
+## Experiment 2 Results
+
+**Date:** 2026-03-26
+**Source:** `src/sstt_multi_threshold.c` (standalone), `src/sstt_multi_threshold_topo9.c` (integration)
+
+### Part A: Standalone (weaker ranking baseline)
+
+Five quantization schemes with independent inverted indices, merged by
+appearance count, ranked with a topo9-style pipeline that did not
+perfectly replicate canonical topo9 (baseline 96.62% vs 97.27%).
+
+| Config | Accuracy | Errors | Delta |
+|--------|----------|--------|-------|
+| S=1 Standard only | 96.62% | 338 | — |
+| S=2 +Wide-zero | 96.86% | 314 | +0.24pp |
+| S=3 +Narrow-zero | 96.93% | 307 | +0.31pp |
+| S=4 +Adaptive P25/P75 | 97.10% | 290 | +0.48pp |
+| S=5 +Adaptive P10/P90 | **97.23%** | **277** | **+0.61pp** |
+
+Mode A errors: 37 → 8 (78% reduction). Every scheme contributed
+monotonically. Adaptive percentile schemes provided the largest gains.
+
+### Part B: Canonical Topo9 Integration — NEGATIVE RESULT
+
+Multi-threshold retrieval wired into byte-for-byte canonical topo9
+ranking. S=1 baseline reproduces 97.27% exactly.
+
+| Config | Accuracy | Errors | Delta |
+|--------|----------|--------|-------|
+| S=1 (baseline topo9) | **97.27%** | 273 | — |
+| S=2 (+wide-zero) | 96.86% | 314 | -0.41pp |
+| S=3 (+narrow-zero) | 96.93% | 307 | -0.34pp |
+| S=4 (+adaptive P25/P75) | 97.06% | 290 | -0.21pp |
+| S=5 (+adaptive P10/P90) | 97.17% | 283 | **-0.10pp** |
+
+**Adding any scheme beyond standard hurts when ranking is strong.**
+
+### Root Cause
+
+Candidates found by alternative schemes (64/192, adaptive P25/P75)
+have poor dot-product similarity under the standard (85/170) ternary
+representation used for ranking. They displace good candidates from
+the top-200 and add noise to the MAD computation.
+
+Multi-threshold retrieval compensated for ranking weakness in Part A
+(96.62% baseline). With topo9's strong ranking (97.27% baseline),
+retrieval diversity becomes retrieval noise — the same pattern as the
+soft-prior cascade failure (Doc 21): a weaker signal interferes with
+a stronger one.
+
+### What Would Fix It
+
+Multi-scheme ranking: compute dot products and structural features
+under each scheme's representation, fuse scores. This is a significant
+architectural change with uncertain payoff given that K-invariance
+already shows retrieval is near-perfect.
+
+### Conclusions
+
+1. **Multi-threshold helps weak rankers, hurts strong rankers.**
+   +0.61pp with weak ranking, -0.10pp with topo9.
+
+2. **Ranking features are scheme-specific.** The ranker operates in
+   scheme 1's representation space. Candidates from other schemes
+   are ranked in the wrong space.
+
+3. **The 97.27% ceiling is defended by ranking, not retrieval.**
+   K-invariance (Doc 22) and this experiment converge on the same
+   conclusion from different angles.
+
+4. **Position bagging has the same weakness.** Experiment 1 showed
+   +0.10pp on topo9 — also largely redundant with strong ranking.
+
+### Status: NEGATIVE RESULT. Documented for completeness.
