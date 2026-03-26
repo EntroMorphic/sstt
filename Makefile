@@ -43,7 +43,8 @@ ALL_EXPERIMENTS = $(CORE) \
 	$(BUILD)/sstt_cifar10_grid_tracer $(BUILD)/sstt_cifar10_lagrangian \
 	$(BUILD)/sstt_cifar10_multiscale $(BUILD)/sstt_cifar10_router \
 	$(BUILD)/sstt_cifar10_ternvbin $(BUILD)/sstt_cifar10_tracer \
-	$(BUILD)/sstt_benchmark_cifar10
+	$(BUILD)/sstt_benchmark_cifar10 \
+	$(BUILD)/sstt_bag_positions
 
 # Default: build the four most useful binaries
 all: $(BUILD) $(CORE)
