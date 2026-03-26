@@ -1,5 +1,10 @@
 # Contribution 52: Scaling Framework — 224x224 and Beyond
 
+> **Superseded.** The accuracy figures in this document were computed with TRAIN_N=30,000
+> and TEST_N=500. Corrected full-data results (60K/10K) are in
+> [C62](62-scale-224-full-data-results.md). Brute kNN baseline context is in
+> [C63](63-scale-brute-knn-baseline.md).
+
 This experiment validates the **Eigenvalue-Spline framework** (Contribution 18) for scaling ternary inference to high-resolution images while maintaining cache-residency.
 
 ## The Problem

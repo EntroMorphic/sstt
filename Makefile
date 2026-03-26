@@ -2,6 +2,7 @@ CC      = gcc
 CFLAGS  = -O3 -mavx2 -mfma -march=native -Wall -Wextra
 LDFLAGS = -lm
 SRC     = src
+BUILD   = build
 
 MNIST_URL   = https://ossci-datasets.s3.amazonaws.com/mnist
 FASHION_URL = https://fashion-mnist.s3-website.eu-central-1.amazonaws.com
@@ -9,152 +10,248 @@ MNIST_FILES = train-images-idx3-ubyte train-labels-idx1-ubyte \
               t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte
 
 # Core classifiers (best results, most useful starting points)
-CORE = sstt_v2 sstt_bytecascade sstt_multidot sstt_diagnose
+CORE = $(BUILD)/sstt_v2 $(BUILD)/sstt_bytecascade $(BUILD)/sstt_multidot $(BUILD)/sstt_diagnose
 
 # All experiment binaries
 ALL_EXPERIMENTS = $(CORE) \
-	sstt_mvp sstt_geom sstt_fused_test \
-	sstt_bytepacked sstt_pentary sstt_transitions \
-	sstt_series sstt_eigenseries sstt_ensemble \
-	sstt_hybrid sstt_softcascade sstt_perihelion \
-	sstt_push sstt_tiled sstt_tpca \
-	sstt_oracle sstt_oracle_v2 sstt_oracle_v3 sstt_parallel \
-	sstt_topo sstt_topo2 sstt_topo3 sstt_topo4 sstt_topo5 sstt_topo6 sstt_topo7 sstt_topo8 sstt_topo9 \
-	sstt_topo9_val sstt_gauss_delta sstt_kdilute \
-	sstt_cifar10 sstt_cifar10_flat sstt_cifar10_grad sstt_cifar10_mt4 \
-	sstt_cifar10_full sstt_cifar10_stack sstt_cifar10_mt4vote \
-	sstt_cifar10_modec sstt_cifar10_why sstt_cifar10_rawdot \
-	sstt_cifar10_moe sstt_cifar10_qmad sstt_cifar10_propagate sstt_cifar10_mt7vote
+	$(BUILD)/sstt_mvp $(BUILD)/sstt_geom $(BUILD)/sstt_fused_test \
+	$(BUILD)/sstt_bytepacked $(BUILD)/sstt_pentary $(BUILD)/sstt_transitions \
+	$(BUILD)/sstt_series $(BUILD)/sstt_eigenseries $(BUILD)/sstt_ensemble \
+	$(BUILD)/sstt_hybrid $(BUILD)/sstt_softcascade $(BUILD)/sstt_perihelion \
+	$(BUILD)/sstt_push $(BUILD)/sstt_tiled $(BUILD)/sstt_tpca \
+	$(BUILD)/sstt_oracle $(BUILD)/sstt_oracle_v2 $(BUILD)/sstt_oracle_v3 $(BUILD)/sstt_parallel \
+	$(BUILD)/sstt_topo $(BUILD)/sstt_topo2 $(BUILD)/sstt_topo3 $(BUILD)/sstt_topo4 \
+	$(BUILD)/sstt_topo5 $(BUILD)/sstt_topo6 $(BUILD)/sstt_topo7 $(BUILD)/sstt_topo8 $(BUILD)/sstt_topo9 \
+	$(BUILD)/sstt_topo9_val $(BUILD)/sstt_gauss_delta $(BUILD)/sstt_kdilute \
+	$(BUILD)/sstt_navier_stokes $(BUILD)/sstt_taylor_jet $(BUILD)/sstt_taylor_specialist \
+	$(BUILD)/sstt_scale_pro $(BUILD)/sstt_scale_hierarchical $(BUILD)/sstt_scale_224 \
+	$(BUILD)/sstt_scale_brute \
+	$(BUILD)/sstt_error_profile $(BUILD)/sstt_gauss_map $(BUILD)/sstt_confidence_map \
+	$(BUILD)/sstt_vote_route $(BUILD)/sstt_validate $(BUILD)/sstt_delta_map \
+	$(BUILD)/sstt_dual_hot_map $(BUILD)/sstt_router_v1 $(BUILD)/sstt_fashion_stereo \
+	$(BUILD)/sstt_cifar10 $(BUILD)/sstt_cifar10_flat $(BUILD)/sstt_cifar10_grad $(BUILD)/sstt_cifar10_mt4 \
+	$(BUILD)/sstt_cifar10_full $(BUILD)/sstt_cifar10_stack $(BUILD)/sstt_cifar10_mt4vote \
+	$(BUILD)/sstt_cifar10_modec $(BUILD)/sstt_cifar10_why $(BUILD)/sstt_cifar10_rawdot \
+	$(BUILD)/sstt_cifar10_moe $(BUILD)/sstt_cifar10_qmad $(BUILD)/sstt_cifar10_propagate \
+	$(BUILD)/sstt_cifar10_mt7vote $(BUILD)/sstt_cifar10_unified_geom \
+	$(BUILD)/sstt_cifar10_cascade_gauss $(BUILD)/sstt_cifar10_gauss \
+	$(BUILD)/sstt_cifar10_stereo $(BUILD)/sstt_cifar10_stereo_stack \
+	$(BUILD)/sstt_cifar10_adaptive $(BUILD)/sstt_cifar10_binary $(BUILD)/sstt_cifar10_binary_dig \
+	$(BUILD)/sstt_cifar10_correlate $(BUILD)/sstt_cifar10_curvature \
+	$(BUILD)/sstt_cifar10_dual $(BUILD)/sstt_cifar10_edgemask \
+	$(BUILD)/sstt_cifar10_full_lagrangian $(BUILD)/sstt_cifar10_fused \
+	$(BUILD)/sstt_cifar10_grid_tracer $(BUILD)/sstt_cifar10_lagrangian \
+	$(BUILD)/sstt_cifar10_multiscale $(BUILD)/sstt_cifar10_router \
+	$(BUILD)/sstt_cifar10_ternvbin $(BUILD)/sstt_cifar10_tracer \
+	$(BUILD)/sstt_benchmark_cifar10
 
 # Default: build the four most useful binaries
-all: $(CORE)
+all: $(BUILD) $(CORE)
 
 # Build everything
-experiments: $(ALL_EXPERIMENTS)
+experiments: $(BUILD) $(ALL_EXPERIMENTS)
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+# All targets depend on the build directory existing (order-only: no rebuild on dir timestamp)
+$(ALL_EXPERIMENTS) $(BUILD)/sstt_fused_test $(BUILD)/sstt_fused_test_asm: | $(BUILD)
 
 # ----------------------------------------------------------------
 # Core classifiers
 # ----------------------------------------------------------------
-sstt_v2: $(SRC)/sstt_v2.c
+$(BUILD)/sstt_v2: $(SRC)/sstt_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_bytecascade: $(SRC)/sstt_bytecascade.c
+$(BUILD)/sstt_bytecascade: $(SRC)/sstt_bytecascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_multidot: $(SRC)/sstt_multidot.c
+$(BUILD)/sstt_multidot: $(SRC)/sstt_multidot.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_diagnose: $(SRC)/sstt_diagnose.c
+$(BUILD)/sstt_diagnose: $(SRC)/sstt_diagnose.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ----------------------------------------------------------------
 # Exploration experiments
 # ----------------------------------------------------------------
-sstt_mvp: $(SRC)/sstt_mvp.c
+$(BUILD)/sstt_mvp: $(SRC)/sstt_mvp.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_geom: $(SRC)/sstt_geom.c
+$(BUILD)/sstt_geom: $(SRC)/sstt_geom.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_bytepacked: $(SRC)/sstt_bytepacked.c
+$(BUILD)/sstt_bytepacked: $(SRC)/sstt_bytepacked.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_pentary: $(SRC)/sstt_pentary.c
+$(BUILD)/sstt_pentary: $(SRC)/sstt_pentary.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_transitions: $(SRC)/sstt_transitions.c
+$(BUILD)/sstt_transitions: $(SRC)/sstt_transitions.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_series: $(SRC)/sstt_series.c
+$(BUILD)/sstt_series: $(SRC)/sstt_series.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_eigenseries: $(SRC)/sstt_eigenseries.c
+$(BUILD)/sstt_eigenseries: $(SRC)/sstt_eigenseries.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_ensemble: $(SRC)/sstt_ensemble.c
+$(BUILD)/sstt_ensemble: $(SRC)/sstt_ensemble.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_hybrid: $(SRC)/sstt_hybrid.c
+$(BUILD)/sstt_hybrid: $(SRC)/sstt_hybrid.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_softcascade: $(SRC)/sstt_softcascade.c
+$(BUILD)/sstt_softcascade: $(SRC)/sstt_softcascade.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_perihelion: $(SRC)/sstt_perihelion.c
+$(BUILD)/sstt_perihelion: $(SRC)/sstt_perihelion.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_push: $(SRC)/sstt_push.c
+$(BUILD)/sstt_push: $(SRC)/sstt_push.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_tiled: $(SRC)/sstt_tiled.c
+$(BUILD)/sstt_tiled: $(SRC)/sstt_tiled.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_tpca: $(SRC)/sstt_tpca.c
+$(BUILD)/sstt_tpca: $(SRC)/sstt_tpca.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_oracle: $(SRC)/sstt_oracle.c
+$(BUILD)/sstt_oracle: $(SRC)/sstt_oracle.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_oracle_v2: $(SRC)/sstt_oracle_v2.c
+$(BUILD)/sstt_oracle_v2: $(SRC)/sstt_oracle_v2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_parallel: $(SRC)/sstt_parallel.c
+$(BUILD)/sstt_parallel: $(SRC)/sstt_parallel.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_oracle_v3: $(SRC)/sstt_oracle_v3.c
+$(BUILD)/sstt_oracle_v3: $(SRC)/sstt_oracle_v3.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo: $(SRC)/sstt_topo.c
+$(BUILD)/sstt_topo: $(SRC)/sstt_topo.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo2: $(SRC)/sstt_topo2.c
+$(BUILD)/sstt_topo2: $(SRC)/sstt_topo2.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo3: $(SRC)/sstt_topo3.c
+$(BUILD)/sstt_topo3: $(SRC)/sstt_topo3.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo4: $(SRC)/sstt_topo4.c
+$(BUILD)/sstt_topo4: $(SRC)/sstt_topo4.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo5: $(SRC)/sstt_topo5.c
+$(BUILD)/sstt_topo5: $(SRC)/sstt_topo5.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo6: $(SRC)/sstt_topo6.c
+$(BUILD)/sstt_topo6: $(SRC)/sstt_topo6.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo7: $(SRC)/sstt_topo7.c
+$(BUILD)/sstt_topo7: $(SRC)/sstt_topo7.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo8: $(SRC)/sstt_topo8.c
+$(BUILD)/sstt_topo8: $(SRC)/sstt_topo8.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo9: $(SRC)/sstt_topo9.c
+$(BUILD)/sstt_topo9: $(SRC)/sstt_topo9.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_topo9_val: $(SRC)/sstt_topo9_val.c
+$(BUILD)/sstt_topo9_val: $(SRC)/sstt_topo9_val.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_gauss_delta: $(SRC)/sstt_gauss_delta.c
+$(BUILD)/sstt_gauss_delta: $(SRC)/sstt_gauss_delta.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-# CIFAR-10 experiments (single-file pattern)
-sstt_cifar10 sstt_cifar10_flat sstt_cifar10_grad sstt_cifar10_mt4 \
-sstt_cifar10_full sstt_cifar10_stack sstt_cifar10_mt4vote \
-sstt_cifar10_modec sstt_cifar10_why sstt_cifar10_rawdot \
-sstt_cifar10_moe sstt_cifar10_qmad sstt_cifar10_propagate sstt_cifar10_mt7vote: sstt_%: $(SRC)/sstt_%.c
+$(BUILD)/sstt_kdilute: $(SRC)/sstt_kdilute.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-sstt_kdilute: $(SRC)/sstt_kdilute.c
+# ----------------------------------------------------------------
+# Topology / analysis experiments (previously missing targets)
+# ----------------------------------------------------------------
+$(BUILD)/sstt_error_profile: $(SRC)/sstt_error_profile.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_gauss_map: $(SRC)/sstt_gauss_map.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_confidence_map: $(SRC)/sstt_confidence_map.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_vote_route: $(SRC)/sstt_vote_route.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_validate: $(SRC)/sstt_validate.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_delta_map: $(SRC)/sstt_delta_map.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_dual_hot_map: $(SRC)/sstt_dual_hot_map.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_router_v1: $(SRC)/sstt_router_v1.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_fashion_stereo: $(SRC)/sstt_fashion_stereo.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_scale_224: $(SRC)/sstt_scale_224.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_scale_brute: $(SRC)/sstt_scale_brute.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_benchmark_cifar10: $(SRC)/sstt_benchmark_cifar10.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# ----------------------------------------------------------------
+# Field-theoretic and scaling experiments (contributions 57-59)
+# ----------------------------------------------------------------
+$(BUILD)/sstt_navier_stokes: $(SRC)/sstt_navier_stokes.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_taylor_jet: $(SRC)/sstt_taylor_jet.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_taylor_specialist: $(SRC)/sstt_taylor_specialist.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_scale_pro: $(SRC)/sstt_scale_pro.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_scale_hierarchical: $(SRC)/sstt_scale_hierarchical.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# ----------------------------------------------------------------
+# CIFAR-10 experiments
+# ----------------------------------------------------------------
+$(BUILD)/sstt_cifar10: $(SRC)/sstt_cifar10.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_cifar10_flat $(BUILD)/sstt_cifar10_grad \
+$(BUILD)/sstt_cifar10_mt4 $(BUILD)/sstt_cifar10_full $(BUILD)/sstt_cifar10_stack \
+$(BUILD)/sstt_cifar10_mt4vote $(BUILD)/sstt_cifar10_modec $(BUILD)/sstt_cifar10_why \
+$(BUILD)/sstt_cifar10_rawdot $(BUILD)/sstt_cifar10_moe $(BUILD)/sstt_cifar10_qmad \
+$(BUILD)/sstt_cifar10_propagate $(BUILD)/sstt_cifar10_mt7vote \
+$(BUILD)/sstt_cifar10_unified_geom $(BUILD)/sstt_cifar10_cascade_gauss \
+$(BUILD)/sstt_cifar10_gauss $(BUILD)/sstt_cifar10_stereo $(BUILD)/sstt_cifar10_stereo_stack \
+$(BUILD)/sstt_cifar10_adaptive $(BUILD)/sstt_cifar10_binary $(BUILD)/sstt_cifar10_binary_dig \
+$(BUILD)/sstt_cifar10_correlate $(BUILD)/sstt_cifar10_curvature \
+$(BUILD)/sstt_cifar10_dual $(BUILD)/sstt_cifar10_edgemask \
+$(BUILD)/sstt_cifar10_full_lagrangian $(BUILD)/sstt_cifar10_fused \
+$(BUILD)/sstt_cifar10_grid_tracer $(BUILD)/sstt_cifar10_lagrangian \
+$(BUILD)/sstt_cifar10_multiscale $(BUILD)/sstt_cifar10_router \
+$(BUILD)/sstt_cifar10_ternvbin $(BUILD)/sstt_cifar10_tracer: $(BUILD)/sstt_cifar10_%: $(SRC)/sstt_cifar10_%.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ----------------------------------------------------------------
 # Fused kernel (C + optional ASM variant)
 # ----------------------------------------------------------------
-sstt_fused_test: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused_c.c $(SRC)/sstt_fused.h
+$(BUILD)/sstt_fused_test: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused_c.c $(SRC)/sstt_fused.h
 	$(CC) $(CFLAGS) -o $@ $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused_c.c $(LDFLAGS)
 
 # ASM variant (WIP — operand ordering bug under investigation)
-sstt_fused_test_asm: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused.S $(SRC)/sstt_fused.h
+$(BUILD)/sstt_fused_test_asm: $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused.S $(SRC)/sstt_fused.h
 	$(CC) $(CFLAGS) -o $@ $(SRC)/sstt_fused_test.c $(SRC)/sstt_fused.S $(LDFLAGS)
 
 # ----------------------------------------------------------------
@@ -196,9 +293,9 @@ data-fashion/%.gz:
 # Cleanup
 # ----------------------------------------------------------------
 clean:
-	rm -f $(ALL_EXPERIMENTS) sstt_fused_test sstt_fused_test_asm
+	rm -rf $(BUILD)
 
 cleanall: clean
-	rm -rf data data-fashion
+	rm -rf data data-fashion data-cifar10
 
 .PHONY: all experiments clean cleanall mnist fashion

@@ -11,7 +11,7 @@ This contribution documents the active effort to break the repository's primary 
 ## 2. High-Resolution Scaling Robustness
 **Test:** Run the 224x224 Scaling Framework on Fashion-MNIST.
 - **Hypothesis:** Bilinear interpolation (Spline-equivalent) should retain >90% accuracy.
-- **Finding:** **Partial Success (89.1%).** Retention was slightly lower than MNIST (98.5%), indicating that clothing textures have higher spatial frequency requirements and may need a denser knot grid than digits.
+- **Finding:** **Partial Success (89.1%).** Retention was slightly lower than MNIST (98.5%), indicating that clothing textures have higher spatial frequency requirements and may need a denser knot grid than digits. The denominator (full hot map Fashion-224) is confirmed as 46.77% in [C62](archived/contributions/62-scale-224-full-data-results.md). Brute kNN context in [C63](archived/contributions/63-scale-brute-knn-baseline.md).
 
 ## 3. Threshold "Death Valley"
 **Analysis:** We identified a "Death Valley" in the confidence map for CIFAR-10 natural images, where the plurality vote has nearly zero predictive power.

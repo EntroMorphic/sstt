@@ -4,86 +4,91 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](CHANGELOG.md)
 
-**Zero learned parameters.** No gradient descent, no backpropagation, no
-floating point at inference. Classification is integer table lookups, AVX2
-byte operations, and add/subtract. The entire model fits in L2 cache.
+**No gradient descent. No backpropagation. No floating point at inference.
+No learned parameters.**
 
-### **Results Summary**
+SSTT classifies images using only integer table lookups, AVX2 byte
+operations, and add/subtract arithmetic. The entire model fits in L2 cache.
 
-*   **MNIST: 97.27%** (Static baseline, sequential is noise)
-*   **Fashion-MNIST: 85.68%** (+8.50pp over brute kNN)
-*   **CIFAR-10: 50.18%** (5× random, texture retrieval → shape ranking)
-
-The system also knows when it will fail: a 264-entry confidence map predicts
-difficulty before ranking, achieving **99.6% accuracy on 22% of images** with
-zero additional computation.
+It achieves **97.27% on MNIST** — exceeding brute k=3 NN (96.12%) by
++1.15pp while examining **1200x fewer candidates**. The same code,
+with zero architectural changes, achieves **85.68% on Fashion-MNIST**
+(+8.82pp over brute kNN).
 
 ---
 
-## **Speed-Accuracy Pareto Frontier**
+## Key Findings
 
-| Method | Accuracy (MNIST) | Latency | Regime |
-|--------|------------------|---------|--------|
-| Dual Hot Map | 76.53% | 1.5 μs | Embedded Instant |
-| Bytepacked Bayesian | 91.83% | 1.9 μs | Embedded Real-time |
-| Pentary Hot Map | 86.31% | 4.7 μs | Embedded Real-time |
-| **Tiered Router v1** | **96.50%** | **670 μs** | **Production Hybrid** |
-| Sparse Scaling (224) | — | ~70 μs | High-Res Cache-Resident |
-| Field-Theoretic Ranking | 97.27% | ~1 ms | Batch / Research |
-| Curvature-Gauss Cascade | 50.18% | ~3 ms | CIFAR-10 Best |
+**K-invariance.** Top-50 candidates by vote contain every relevant
+neighbor out of 60,000 training images. Accuracy is identical from
+K=50 through K=1000 — a 1200x compression ratio with zero recall loss.
+Retrieval is solved. All remaining error is a ranking problem.
 
----
+**Error mode decomposition.** 98.3% of classification errors occur at
+the ranking step, not retrieval: 64.5% ranking inversions, 33.8% vote
+dilution, 1.7% retrieval failures. This establishes a fixable ceiling
+of ~98.6%.
 
-## **Project Audit**
+**Cross-dataset generalization.** Fashion-MNIST accuracy of 85.68% with
+zero tuning — IG weights automatically redistribute across channels.
+The +8.82pp lift over brute kNN (larger than the +1.15pp on MNIST)
+shows the architecture provides more value on harder tasks.
 
-### **Novel (The Breakthroughs)**
-*   **`_mm256_sign_epi8` as Ternary Multiply:** A clever hardware-level hack using AVX2 conditional negation to perform 32 ternary multiply-accumulates per cycle without a multiply instruction.
-*   **Discrete Green’s Theorem on Ternary Fields:** Applying differential-geometric operators (divergence) to quantized gradient fields to identify topological features like closed loops.
-*   **The Confidence Map (Difficulty Oracle):** A "free" byproduct of the retrieval step that predicts classification difficulty before ranking.
-*   **3-Eye Stereoscopic Retrieval:** Using multi-perspective voting to reach 99.4% recall on CIFAR-10, narrowing 50,000 images down to 200 candidates.
-
-### **Useful (The Engineering Value)**
-*   **Compute Profiling:** The discovery that **87% of execution time is memory access (scattered writes)**, not arithmetic. This generalizes to any inverted-index system on modern hardware.
-*   **Negative Results Archive:** Honest documentation of failed experiments (PCA, soft-prior cascades, hard filtering) prevents future researchers from wasting time on the same dead ends.
-*   **Ablation Series (topo1-9):** A textbook example of incremental methodology where each improvement is isolated and verified.
-
-### **Understated (The Real "Headline" Claims)**
-*   **Zero Learned Parameters:** No backpropagation, no gradient descent, and no floating point at inference. This is the project's most significant claim.
-*   **Fashion-MNIST Dominance:** The system beats brute-force kNN by **+8.5pp** on Fashion-MNIST, proving the architecture adds value beyond pixel-space retrieval.
-*   **K-Invariance:** The finding that the top 50 candidates contain every relevant neighbor. This **1200x compression** means retrieval is effectively solved.
+**Free confidence signal.** Vote concentration predicts difficulty at
+zero cost. The adaptive router classifies 10% of MNIST at 99.9% accuracy
+in <1 us, and 9.6% of Fashion-MNIST at 100% accuracy (zero false positives).
 
 ---
 
-## **Architecture**
+## Results
+
+| Method | MNIST | Fashion | Latency | Notes |
+|--------|-------|---------|---------|-------|
+| Brute k=3 NN | 96.12% | 76.86% | — | Pixel-space ceiling |
+| Bytepacked Bayesian | 91.83% | — | 1.9 us | O(1) lookup baseline |
+| Bytepacked Cascade | 96.28% | 82.89% | 930 us | Best single method |
+| **Topological Ranking** | **97.27%** | **85.68%** | ~1 ms | **Val/holdout confirmed** |
+| Three-Tier Router | 96.50% | 83.42% | 0.67 ms | Production (2x throughput) |
+| CIFAR-10 Cascade | — | — | ~3 ms | 50.18% (5x random; boundary test) |
+
+CIFAR-10 at 50.18% is an honest boundary test, not a success claim. At 32x32
+resolution, visually similar classes (cat/dog) cannot be distinguished without
+learned parameters.
+
+---
+
+## Architecture
 
 ```
 Raw image (28x28 uint8)
     |
-    v  AVX2 ternary quantization
-{-1, 0, +1} per pixel (85/170 thresholds)
+    v  Ternary quantization: pixel < 85 -> -1, 85-169 -> 0, >= 170 -> +1
     |
-    +---- Pixel blocks  (3x1 horizontal, 252 positions, 27 values)
-    +---- H-grad blocks (same geometry, derivative channel)
-    +---- V-grad blocks (same geometry, derivative channel)
-    +---- Bytepacked   (all 3 channels -> 1 byte, 256 values)
+    +-- Pixel channel      (3x1 blocks, 252 positions)
+    +-- H-grad channel     (horizontal finite difference)
+    +-- V-grad channel     (vertical finite difference)
+    +-- Bytepacked channel (all 3 fused into 1 byte, 256 values)
               |
-              v  Information-gain weighted multi-probe voting
-         Inverted index lookup
-         IG-weighted votes -> top-K candidates
+              v  IG-weighted inverted index + Hamming-1 multi-probe
+         Vote accumulation -> top-50 candidates (K-invariant)
               |
-              v  Multi-channel ternary dot refinement
+              v  Multi-channel ternary dot product (via _mm256_sign_epi8)
          score = 256 * dot(px) + 192 * dot(vg)
+              |
+              v  Topological augmentation (divergence, centroid, profile)
+         Kalman adaptive weighting + Bayesian sequential accumulation
               |
               v  k=3 majority vote
          Class prediction
 ```
 
-**Core insight:** quantize -> encode blocks -> vote over training images by
-block match -> refine top-K with dot product. No matrix multiply. No
-backpropagation. All computation is integer table lookup and AVX2 byte
-operations.
+Every parameter is derived from closed-form training statistics (IG weights,
+BG thresholds) or exhaustive discrete grid search (125 combinations). No
+parameter is updated by a loss function.
 
-## **Quick Start**
+---
+
+## Quick Start
 
 **Requirements:** GCC with AVX2 support, GNU Make, curl.
 
@@ -91,32 +96,45 @@ operations.
 git clone https://github.com/anjaustin/s2t2.git
 cd s2t2
 
-# Download MNIST and Fashion-MNIST
+# Download data
 make mnist
 make fashion
 
-# Build the main classifiers
+# Build core classifiers
 make
 
-# Run best single method on MNIST
-./sstt_bytecascade
+# Run validated best on MNIST
+./build/sstt_topo9_val
 
-# Run on Fashion-MNIST
-./sstt_bytecascade data-fashion/
+# Run bytepacked cascade on Fashion-MNIST
+./build/sstt_bytecascade data-fashion/
 ```
 
-## **Experiments**
+## Key Source Files
 
-Each experiment is a self-contained `.c` file. Build individually with `make sstt_<name>`.
+| File | Role | Result |
+|------|------|--------|
+| `src/sstt_topo9_val.c` | Validated publication version | 97.27% MNIST, 85.68% Fashion |
+| `src/sstt_bytecascade.c` | Best single method | 96.28% MNIST |
+| `src/sstt_router_v1.c` | Production router | 96.50% at 0.67ms |
+| `src/sstt_topo9.c` | Research best (topo series) | 97.27% MNIST |
+| `src/sstt_diagnose.c` | Error autopsy tooling | Mode A/B/C decomposition |
+| `src/sstt_cifar10_cascade_gauss.c` | CIFAR-10 boundary | 50.18% |
 
-| Binary | MNIST | Description |
-|--------|-------|-------------|
-| `sstt_bytecascade` | 96.28% | Bytepacked cascade — best single method |
-| `sstt_topo9_val` | **97.27%** | Honest val/holdout validation: zero sequential benefit on MNIST |
-| `sstt_oracle_v2` | 96.44% | Routed oracle: primary + pentary specialist |
-| `sstt_diagnose` | — | Error autopsy: failure mode + ASCII visualiser |
-| `sstt_bytepacked` | 91.83% | Bytepacked hot map (Bayesian series) |
+All 87 source files are self-contained experiments. Build any with
+`make build/sstt_<name>`. See [`docs/INDEX.md`](docs/INDEX.md) for
+which files matter and why.
 
-## **License**
+## Documentation
+
+25 active contributions in [`docs/`](docs/INDEX.md) covering the full
+story from first primitive to validated results. 35 archived contributions
+preserved in [`docs/archived/`](docs/archived/) for provenance.
+
+One paper draft: [`docs/papers/sstt-paper-draft.md`](docs/papers/sstt-paper-draft.md)
+
+Full audit: [`AUDIT_SSTT.md`](AUDIT_SSTT.md)
+
+## License
 
 MIT — see [LICENSE](LICENSE).

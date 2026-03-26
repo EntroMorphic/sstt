@@ -30,16 +30,16 @@ process is transferable to any experimental ML project.
 ## Adding an Experiment
 
 1. **Name it** — `sstt_<descriptive_name>.c`, self-contained, no shared state
-   with other experiments
-2. **Add a Makefile target** — follow the existing pattern
-3. **Add to `.gitignore`** — compiled binary only, not source
-4. **Document it** — a numbered doc in `docs/` with:
+   with other experiments. Place in `src/`.
+2. **Add a Makefile target** — follow the existing `$(BUILD)/sstt_name` pattern.
+   Binaries are output to `build/` (gitignored).
+3. **Document it** — a numbered doc in `docs/` with:
    - Hypothesis
    - Architecture / implementation notes
    - Results (accuracy, speed, comparison to reference)
    - What the failure teaches (if negative)
-5. **Update CHANGELOG.md** — one paragraph under the current unreleased section
-6. **Reference numbers are sequential** — check the highest existing doc number
+4. **Update CHANGELOG.md** — one paragraph under the current unreleased section
+5. **Reference numbers are sequential** — check the highest existing doc number
 
 ## Code Style
 
@@ -49,6 +49,11 @@ process is transferable to any experimental ML project.
 - `static` for all non-`main` functions
 - Error handling: print to stderr, `exit(1)` — this is research code, not
   production
+
+## Tests and Scripts
+
+Standalone test programs live in `tests/`. Utility and analysis scripts
+live in `scripts/`. Both follow the same single-file convention as `src/`.
 
 ## Reporting Issues
 

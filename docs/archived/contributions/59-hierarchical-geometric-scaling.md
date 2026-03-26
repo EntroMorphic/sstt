@@ -1,5 +1,10 @@
 # Contribution 59: Hierarchical Geometric Scaling (224x224)
 
+> **Superseded.** The accuracy figures in this document were computed with TRAIN_N=20,000
+> and TEST_N=1,000. Corrected full-data results (60K/10K) are in
+> [C62](62-scale-224-full-data-results.md). Brute kNN baseline context is in
+> [C63](63-scale-brute-knn-baseline.md).
+
 This contribution expands the scaling framework to include **Multi-Scale Bayesian Fusion**, addressing the noise sensitivity of high-resolution ternary fields.
 
 ## The Multi-Scale Principle

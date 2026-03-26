@@ -45,10 +45,10 @@ jobs:
                      sstt_series sstt_eigenseries sstt_ensemble \
                      sstt_hybrid sstt_softcascade sstt_perihelion \
                      sstt_push sstt_tiled sstt_tpca; do
-            test -f "$bin" && echo "OK: $bin" || (echo "MISSING: $bin" && exit 1)
+            test -f "build/$bin" && echo "OK: $bin" || (echo "MISSING: $bin" && exit 1)
           done
 
       - name: Run fused kernel correctness test
         run: |
           make mnist MNIST_URL="https://ossci-datasets.s3.amazonaws.com/mnist"
-          ./sstt_fused_test
+          ./build/sstt_fused_test
