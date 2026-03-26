@@ -450,4 +450,225 @@ already shows retrieval is near-perfect.
 4. **Position bagging has the same weakness.** Experiment 1 showed
    +0.10pp on topo9 — also largely redundant with strong ranking.
 
-### Status: NEGATIVE RESULT. Documented for completeness.
+### Status: NEGATIVE RESULT on MNIST. Cross-dataset testing follows.
+
+---
+
+## Cross-Dataset Results
+
+**Date:** 2026-03-26
+**Source:** Fashion runs via existing binaries with `data-fashion/` arg;
+CIFAR-10 via `src/sstt_cifar10_multi_eye.c`
+
+The MNIST negative result raised the question: does multi-threshold
+retrieval help on datasets with higher intensity variation? Fashion-MNIST
+(clothing textures, variable backgrounds) and CIFAR-10 (natural images,
+full RGB) are the natural tests.
+
+### Fashion-MNIST: Position Bagging
+
+**Source:** `src/sstt_bag_topo9.c data-fashion/`
+
+| M\R | R=0.5 | R=0.6 | R=0.7 |
+|-----|-------|-------|-------|
+| M=5 | 84.46% | 84.77% | 84.55% |
+| M=7 | 84.66% | **84.89%** | 84.68% |
+| M=10 | 84.61% | 84.62% | 84.47% |
+
+- **Baseline topo9:** 84.80% (1520 errors)
+- **Best bagged (M=7, R=0.6):** 84.89% (+0.09pp)
+
+**Error mode analysis (baseline):**
+
+| Mode | Count | % of errors |
+|------|-------|-------------|
+| A (retrieval miss) | 15 | 1.0% |
+| B (ranking inversion) | 1183 | 77.8% |
+| C (vote dilution) | 322 | 21.2% |
+
+**Verdict:** Same as MNIST — negligible. Fashion's errors are 77.8%
+Mode B (ranking inversions). Bagging can't fix the ranker.
+
+### Fashion-MNIST: Multi-Threshold Ensemble
+
+**Source:** `src/sstt_multi_threshold_topo9.c data-fashion/`
+
+| Config | Accuracy | Errors | Delta |
+|--------|----------|--------|-------|
+| S=1 (baseline topo9) | 84.80% | 1520 | — |
+| S=2 (+wide-zero 64/192) | 84.60% | 1540 | -0.20pp |
+| S=3 (+narrow-zero 96/160) | 84.53% | 1547 | -0.27pp |
+| S=4 (+adaptive P25/P75) | 85.02% | 1498 | **+0.22pp** |
+| S=5 (+adaptive P10/P90) | **85.14%** | **1486** | **+0.34pp** |
+
+**POSITIVE RESULT.** Fixed-threshold schemes (2, 3) hurt — same pattern
+as MNIST. But adaptive percentile schemes (4, 5) rescue the ensemble
+and push past baseline.
+
+**Why this works on Fashion but not MNIST:**
+
+Fashion-MNIST has much wider intensity variation across classes. A black
+t-shirt, a white sneaker, and a grey coat have fundamentally different
+brightness distributions. Fixed thresholds (85/170) map many clothing
+items into the wrong ternary bins. Per-image adaptive thresholds (P25/P75,
+P10/P90) normalize the dynamic range, bringing correct training matches
+into the candidate set that fixed thresholds miss.
+
+MNIST digits are white strokes on black backgrounds with nearly uniform
+intensity. The (85/170) thresholds are already near-optimal for every
+image. Alternative thresholds add noise, not signal.
+
+**Per-pair deltas (S=5 vs S=1):**
+
+| Pair | Baseline | S=5 | Delta |
+|------|----------|-----|-------|
+| 2↔6 (pullover↔shirt) | 239 | 230 | -9 |
+| 3↔8 (dress↔bag) | 9 | 7 | -2 |
+| 5↔7 (sandal↔sneaker) | 88 | 84 | -4 |
+| 0↔6 (tshirt↔shirt) | 276 | 290 | +14 |
+| 2↔4 (pullover↔coat) | 217 | 234 | +17 |
+
+Mixed per-pair results. The 0↔6 and 2↔4 regressions offset gains
+elsewhere. The adaptive schemes help some pairs (2↔6, 5↔7) but
+introduce confusion on others (0↔6, 2↔4) where the adaptive
+thresholds make similar textures even harder to distinguish.
+
+### CIFAR-10: Multi-Eye Ensemble
+
+**Source:** `src/sstt_cifar10_multi_eye.c`
+
+The existing CIFAR-10 pipeline already uses 3 "eyes" (fixed, adaptive
+P33/P67, per-channel P33/P67). We added 4 more:
+
+| Eye | Quantization | Notes |
+|-----|-------------|-------|
+| 1 | Fixed (85/170) | Original |
+| 2 | Adaptive P33/P67 per-image | Original |
+| 3 | Per-channel P33/P67 | Original |
+| 4 | Fixed (64/192) | Wide-zero, new |
+| 5 | Fixed (96/160) | Narrow-zero, new |
+| 6 | Adaptive P10/P90 per-image | Aggressive, new |
+| 7 | Per-channel P25/P75 | Wide per-channel, new |
+
+Ranking: RGB 4×4 Gauss map L1 distance (2880 features), unchanged
+from the original cascade.
+
+**Ablation (stereo vote → top-200 → RGB Gauss rank → kNN):**
+
+| Config | Recall | k=1 | k=3 | k=5 | k=7 |
+|--------|--------|-----|-----|-----|-----|
+| 3-eye (baseline) | 99.44% | 49.07% | 48.78% | 50.00% | **50.18%** |
+| 5-eye (+fixed variants) | 99.44% | 49.14% | 48.97% | 50.48% | 49.86% |
+| 7-eye (all) | **99.60%** | **50.73%** | **50.59%** | **52.41%** | **52.41%** |
+
+**STRONG POSITIVE RESULT: 50.18% → 52.41% (+2.23pp)**
+
+The optimal k shifts from k=7 (baseline) to k=5 (7-eye), suggesting
+the larger candidate diversity provides better top-5 neighbors than
+the smaller diversity's top-7.
+
+Recall increases from 99.44% to 99.60% — a small absolute gain (16
+additional images with correct class in top-200) but meaningful at
+this accuracy level.
+
+**Per-class breakdown (7-eye k=5):**
+
+| Class | Accuracy | Notes |
+|-------|----------|-------|
+| airplane | 58.9% | Strong |
+| automobile | 57.8% | Strong |
+| bird | 38.5% | Hard (texture similarity with other animals) |
+| cat | 33.6% | Hardest (cat/dog confusion) |
+| deer | 49.9% | Moderate |
+| dog | 42.2% | Hard (cat/dog confusion) |
+| frog | 63.5% | Strong (distinctive shape) |
+| horse | 54.9% | Moderate |
+| ship | 63.7% | Strong (distinctive shape + background) |
+| truck | 61.1% | Strong |
+
+Gains are broad — not concentrated in any single class. The hard
+classes (bird, cat, dog) remain hard but improve. The strong classes
+(frog, ship, truck) improve further.
+
+**Why CIFAR-10 benefits most:**
+
+1. **Maximum intensity variation.** Natural images span the full 0-255
+   range with per-image distributions that vary enormously. Fixed
+   thresholds are a poor fit for most images. Multiple quantization
+   schemes cover more of the representation space.
+
+2. **The Gauss map ranker is scheme-agnostic.** Unlike topo9's ternary
+   dot products (which are scheme-specific), the RGB Gauss map ranking
+   operates on raw pixel gradients, not ternary representations. So
+   candidates found by alternative quantization schemes can still be
+   ranked effectively.
+
+3. **The 3-eye baseline was already multi-threshold.** CIFAR's existing
+   pipeline already benefited from stereoscopic retrieval. Adding 4
+   more eyes extends this principle. The improvement from 3→7 eyes
+   (+2.23pp) is larger than the original improvement from 1→3 eyes
+   in the stereoscopic work.
+
+---
+
+## Summary of All Results
+
+### Experiment 1: Position Bagging
+
+| Dataset | Baseline | Best Bagged | Delta | Verdict |
+|---------|----------|-------------|-------|---------|
+| MNIST (bytecascade) | 95.86% | 96.24% | +0.38pp | Modest |
+| MNIST (topo9) | 97.27% | 97.37% | +0.10pp | Noise |
+| Fashion (topo9) | 84.80% | 84.89% | +0.09pp | Noise |
+
+**Conclusion:** Position bagging is largely redundant with topological
+ranking. Value only on the fast path (bytecascade without topo features).
+
+### Experiment 2: Multi-Threshold Ensemble
+
+| Dataset | Baseline | Multi-threshold | Delta | Verdict |
+|---------|----------|----------------|-------|---------|
+| MNIST (standalone) | 96.62% | 97.23% | +0.61pp | Positive (weak ranker) |
+| MNIST (topo9) | 97.27% | 97.17% | -0.10pp | **Negative** |
+| Fashion (topo9) | 84.80% | 85.14% | +0.34pp | **Positive** |
+| CIFAR-10 (7-eye) | 50.18% | 52.41% | +2.23pp | **Strong positive** |
+
+**Conclusion:** Multi-threshold value scales with intensity variation.
+Negative on MNIST (uniform intensity, strong ranker). Positive on
+Fashion (+0.34pp, adaptive thresholds normalize clothing brightness).
+Strong positive on CIFAR-10 (+2.23pp, maximum variation, scheme-agnostic
+ranker).
+
+### The Unifying Insight
+
+Multi-threshold ensemble helps when **either** of these conditions holds:
+1. The ranker is weak (standalone MNIST experiment, +0.61pp)
+2. The dataset has high intensity variation AND the ranker is scheme-agnostic
+   (Fashion +0.34pp, CIFAR-10 +2.23pp)
+
+It hurts when both conditions fail: strong ranker AND uniform intensity
+AND scheme-specific ranking features (MNIST + topo9, -0.10pp).
+
+The deepest finding: **the value of retrieval diversity depends on
+whether the ranker can use diverse candidates.** Topo9's ternary dot
+products penalize candidates from other schemes. CIFAR's Gauss map
+doesn't. This is the architectural constraint that determines whether
+multi-threshold helps or hurts.
+
+### Source Files
+
+| File | Dataset | Experiment |
+|------|---------|-----------|
+| `src/sstt_bag_positions.c` | MNIST | Exp 1: position bagging (bytecascade) |
+| `src/sstt_bag_topo9.c` | MNIST, Fashion | Exp 1: position bagging (topo9) |
+| `src/sstt_multi_threshold.c` | MNIST | Exp 2: standalone multi-threshold |
+| `src/sstt_multi_threshold_topo9.c` | MNIST, Fashion | Exp 2: multi-threshold + canonical topo9 |
+| `src/sstt_cifar10_multi_eye.c` | CIFAR-10 | Exp 2: 7-eye cascade |
+
+### Branches
+
+| Branch | Contents |
+|--------|----------|
+| `exp/bag-positions` | Exp 1 + Exp 1b (bagging on bytecascade and topo9) |
+| `exp/multi-threshold` | Exp 2 standalone |
+| `exp/multi-threshold-topo9` | Exp 2 integration + Fashion + CIFAR-10 |
