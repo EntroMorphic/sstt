@@ -82,6 +82,12 @@ Testing where the architecture breaks on natural images.
 | 37 | [CIFAR-10 boundary test](37-cifar10-boundary-test.md) | 33.76% Bayesian (3.4x random); cascade fails on grayscale |
 | 43 | [Cascade Gauss — 50%](43-cascade-gauss-50pct.md) | **50.18%** stereo vote -> RGB Gauss rank; 5x random |
 
+## RF-Inspired Ensemble Methods
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 64 | [RF-inspired ensemble methods](64-rf-inspired-ensemble-methods.md) | Bagging +0.38pp on bytecascade, +0.10pp on topo9 (largely redundant) |
+
 ## Audit
 
 | # | Title | Scope |
