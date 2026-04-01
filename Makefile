@@ -22,7 +22,7 @@ ALL_EXPERIMENTS = $(CORE) \
 	$(BUILD)/sstt_oracle $(BUILD)/sstt_oracle_v2 $(BUILD)/sstt_oracle_v3 $(BUILD)/sstt_parallel \
 	$(BUILD)/sstt_topo $(BUILD)/sstt_topo2 $(BUILD)/sstt_topo3 $(BUILD)/sstt_topo4 \
 	$(BUILD)/sstt_topo5 $(BUILD)/sstt_topo6 $(BUILD)/sstt_topo7 $(BUILD)/sstt_topo8 $(BUILD)/sstt_topo9 \
-	$(BUILD)/sstt_topo9_val $(BUILD)/sstt_gauss_delta $(BUILD)/sstt_kdilute \
+	$(BUILD)/sstt_topo9_val $(BUILD)/sstt_topo9_val_5trit $(BUILD)/sstt_gauss_delta $(BUILD)/sstt_kdilute \
 	$(BUILD)/sstt_navier_stokes $(BUILD)/sstt_taylor_jet $(BUILD)/sstt_taylor_specialist \
 	$(BUILD)/sstt_scale_pro $(BUILD)/sstt_scale_hierarchical $(BUILD)/sstt_scale_224 \
 	$(BUILD)/sstt_scale_brute \
@@ -158,6 +158,9 @@ $(BUILD)/sstt_topo9: $(SRC)/sstt_topo9.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(BUILD)/sstt_topo9_val: $(SRC)/sstt_topo9_val.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_topo9_val_5trit: $(SRC)/sstt_topo9_val_5trit.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(BUILD)/sstt_gauss_delta: $(SRC)/sstt_gauss_delta.c
