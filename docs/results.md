@@ -78,6 +78,17 @@ Top-50 candidates contain all relevant neighbors from 60K training images. 1200x
 
 ## Channel ablation (MNIST)
 
+**Bytepacked cascade (dot-product weights only, no structural features, K=50, k=3):**
+
+| Weights (px, hg, vg) | Accuracy | Delta |
+|--------|----------|-------|
+| (256, 0, 0) pixel only | 96.04% | baseline |
+| (256, 0, 192) +v-grad | 96.38% | +0.34pp |
+| (256, 192, 0) +h-grad | 95.87% | -0.17pp |
+| (256, 192, 192) all three | 96.21% | +0.17pp |
+
+**Full topo9 system (dot-product + structural features):**
+
 | Config | Accuracy | Delta |
 |--------|----------|-------|
 | Pixel only | 96.93% | baseline |
@@ -85,7 +96,7 @@ Top-50 candidates contain all relevant neighbors from 60K training images. 1200x
 | + H-grad | 96.76% | -0.17pp |
 | All three | 97.27% | +0.34pp |
 
-On MNIST, v-grad helps, h-grad hurts. On Fashion-MNIST, both help. IG re-weighting automatically redistributes importance per dataset.
+On MNIST, v-grad helps, h-grad hurts in both configurations. On Fashion-MNIST, both help. IG re-weighting automatically redistributes importance per dataset.
 
 ## Topological feature ablation (MNIST, topo1 through topo9)
 
