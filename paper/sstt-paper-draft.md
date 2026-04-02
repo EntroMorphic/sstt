@@ -1,8 +1,8 @@
 # Classification Without Gradient Descent: K-Invariant Retrieval in Ternary Address Space
 
-**Authors:** [Names]
+**Authors:** Aaron (Tripp) Josserand-Austin
 
-**Abstract.** SSTT is an image classifier that uses no gradient descent, no backpropagation, and no floating-point arithmetic at inference. Classification is integer address generation: ternary quantization maps images to block signatures; an information-gain-weighted inverted index retrieves candidates; structural ranking resolves the final class. It achieves 97.27% on MNIST and 85.68% on Fashion-MNIST with no iteratively optimized parameters. We report three empirical findings: (1) **K-invariance in retrieval** — in the dot-product cascade, accuracy is identical from K=50 to K=1000 (1200x compression, zero cost), proving retrieval is solved; the structural ranker benefits from larger K (96.59% at K=50 to 97.61% at K=1000), revealing that richer ranking can exploit deeper candidate pools; (2) **error mode decomposition** — 97% of classification errors occur at ranking, not retrieval, with a theoretical ceiling of 99.93% if ranking were perfect; (3) **cross-dataset transfer** — the same architecture achieves 85.68% on Fashion-MNIST (+8.50pp over brute ternary kNN on the same holdout split) with only closed-form IG re-computation and val-derived weight selection, and 50.18% on CIFAR-10 (5x random), scoping where ternary features fail. An adaptive three-tier router delivers 96.50% at 0.67ms average latency.
+**Abstract.** Signature Search Ternary Topology (SSTT) is an image classifier that uses no gradient descent, no backpropagation, and no floating-point arithmetic at inference. Classification is integer address generation: ternary quantization maps images to block signatures; an information-gain-weighted inverted index retrieves candidates; structural ranking resolves the final class. It achieves 97.27% on MNIST and 85.68% on Fashion-MNIST with no iteratively optimized parameters. We report three empirical findings: (1) **K-invariance in retrieval** — in the dot-product cascade, accuracy is identical from K=50 to K=1000 (1200x compression, zero cost), proving retrieval is solved; the structural ranker benefits from larger K (96.59% at K=50 to 97.61% at K=1000), revealing that richer ranking can exploit deeper candidate pools; (2) **error mode decomposition** — 97% of classification errors occur at ranking, not retrieval, with a theoretical ceiling of 99.93% if ranking were perfect; (3) **cross-dataset transfer** — the same architecture achieves 85.68% on Fashion-MNIST (+8.50pp over brute ternary kNN on the same holdout split) with only closed-form IG re-computation and val-derived weight selection, and 50.18% on CIFAR-10 (5x random), scoping where ternary features fail. An adaptive three-tier router delivers 96.50% at 0.67ms average latency.
 
 ---
 
@@ -50,43 +50,43 @@ The result achieves accuracy within the confidence interval of kNN+PCA — the s
 
 ### 3.1 Ternary Quantization
 
-Each image $\mathbf{x} \in [0,255]^{28 \times 28}$ is quantized to a ternary field using fixed thresholds:
+Each image `mathbf{x} in [0,255]^{28 times 28}` is quantized to a ternary field using fixed thresholds:
 
-$$t_{y,x} = \begin{cases} -1 & \text{if } x_{y,x} < 85 \\ 0 & \text{if } 85 \leq x_{y,x} < 170 \\ +1 & \text{if } x_{y,x} \geq 170 \end{cases}$$
+`t_{y,x} = begin{cases} -1 & text{if } x_{y,x} < 85  0 & text{if } 85 leq x_{y,x} < 170  +1 & text{if } x_{y,x} geq 170 end{cases}`
 
 Two derivative channels are computed in ternary space:
 
-$$h_{y,x} = \text{clamp}(t_{y,x+1} - t_{y,x}), \quad v_{y,x} = \text{clamp}(t_{y+1,x} - t_{y,x})$$
+`h_{y,x} = text{clamp}(t_{y,x+1} - t_{y,x}), quad v_{y,x} = text{clamp}(t_{y+1,x} - t_{y,x})`
 
-where clamp maps values outside $\{-1, 0, +1\}$ to the nearest endpoint. This produces three ternary channels: pixel ($\mathbf{t}$), horizontal gradient ($\mathbf{h}$), and vertical gradient ($\mathbf{v}$).
+where clamp maps values outside `{-1, 0, +1}` to the nearest endpoint. This produces three ternary channels: pixel (`mathbf{t}`), horizontal gradient (`mathbf{h}`), and vertical gradient (`mathbf{v}`).
 
 Each channel has an independent background value skipped during indexing: BG_PIXEL = 0 (all-dark block), BG_GRAD = 13 (flat region). The bytepacked variant fuses all three channels plus transition flags into a single byte (256-value signatures), capturing cross-channel correlations absent in independent channels.
 
 ### 3.2 Block Encoding
 
-The image is decomposed into 3x1 horizontal blocks at $P = 252$ overlapping positions. Each block maps to a ternary signature $s \in \{0, \ldots, 26\}$ (or $\{0, \ldots, 255\}$ for bytepacked). Three block series are extracted per channel, yielding 252 signature sequences per query.
+The image is decomposed into 3x1 horizontal blocks at `P = 252` overlapping positions. Each block maps to a ternary signature `s in {0, ldots, 26}` (or `{0, ldots, 255}` for bytepacked). Three block series are extracted per channel, yielding 252 signature sequences per query.
 
 ### 3.3 Information-Gain Weighted Inverted Index
 
-**Training.** For each position $p$ and signature value $v$, store the list of training image IDs exhibiting value $v$ at position $p$: $L_{p,v} = \{i : s_{p,i} = v\}$.
+**Training.** For each position `p` and signature value `v`, store the list of training image IDs exhibiting value `v` at position `p`: `L_{p,v} = {i : s_{p,i} = v}`.
 
 Compute the information gain per position:
 
-$$\text{IG}(p) = H(\mathcal{C}) - H(\mathcal{C} \mid s_p)$$
+`text{IG}(p) = H(mathcal{C}) - H(mathcal{C} mid s_p)`
 
-where $H(\mathcal{C})$ is the marginal class entropy and $H(\mathcal{C} \mid s_p)$ is the conditional entropy given the block signature at position $p$. Weights are normalized to integers in $[1, 16]$, computed once in a single pass over training data.
+where `H(mathcal{C})` is the marginal class entropy and `H(mathcal{C} mid s_p)` is the conditional entropy given the block signature at position `p`. Weights are normalized to integers in `[1, 16]`, computed once in a single pass over training data.
 
-**Inference.** For each block position $p$, look up the inverted list and add IG-weighted votes to each training image in the list:
+**Inference.** For each block position `p`, look up the inverted list and add IG-weighted votes to each training image in the list:
 
-$$V[i] \mathrel{+}= \text{IG}(p) \quad \forall\, i \in L_{p,s_p}$$
+`V[i] mathrel{+}= text{IG}(p) quad forall, i in L_{p,s_p}`
 
-The top-K training images by vote count form the candidate set $\mathcal{K}$.
+The top-K training images by vote count form the candidate set `mathcal{K}`.
 
 ### 3.4 Multi-Probe Expansion
 
 For each position, additionally look up 6 Hamming-1 trit-flip neighbors at half weight:
 
-$$V[i] \mathrel{+}= \tfrac{1}{2}\,\text{IG}(p) \quad \forall\, i \in L_{p,s'}, \quad s' \in \text{Neighbors}(s_p)$$
+`V[i] mathrel{+}= tfrac{1}{2},text{IG}(p) quad forall, i in L_{p,s'}, quad s' in text{Neighbors}(s_p)`
 
 This handles single-trit quantization noise without explicit noise modeling.
 
@@ -94,9 +94,9 @@ This handles single-trit quantization noise without explicit noise modeling.
 
 Candidates are ranked by a weighted multi-channel ternary dot product:
 
-$$\text{score}(i) = 256 \cdot \langle \mathbf{t}, \mathbf{t}_i \rangle + 192 \cdot \langle \mathbf{v}, \mathbf{v}_i \rangle$$
+`text{score}(i) = 256 cdot langle mathbf{t}, mathbf{t}_i rangle + 192 cdot langle mathbf{v}, mathbf{v}_i rangle`
 
-Weights were selected by grid search over $\{0, 64, 128, 192, 256\}^3$ (125 combinations) on a validation split. Each dot product is computed via `_mm256_sign_epi8` — an AVX2 instruction that performs exact ternary multiplication at 32 operations per cycle (see Appendix B). The k=3 majority vote among top-3 scored candidates determines the class.
+Weights were selected by grid search over `{0, 64, 128, 192, 256}^3` (125 combinations) on a validation split. Each dot product is computed via `_mm256_sign_epi8` — an AVX2 instruction that performs exact ternary multiplication at 32 operations per cycle (see Appendix B). The k=3 majority vote among top-3 scored candidates determines the class.
 
 ### 3.6 Structural Ranking Features
 
@@ -104,7 +104,7 @@ The dot product is augmented by discrete features from the gradient channels:
 
 **Gradient divergence.** The finite-difference divergence of the gradient field, computed in cells of a 2x4 spatial grid (MNIST) or 3x3 grid (Fashion-MNIST):
 
-$$\text{div}(x,y) = (h_{x+1,y} - h_{x,y}) + (v_{x,y+1} - v_{x,y})$$
+`text{div}(x,y) = (h_{x+1,y} - h_{x,y}) + (v_{x,y+1} - v_{x,y})`
 
 summed per grid cell. Negative divergence concentrates at enclosed regions and concavities.
 
@@ -114,19 +114,19 @@ summed per grid cell. Negative divergence concentrates at enclosed regions and c
 
 **Adaptive weighting.** The median absolute deviation (MAD) of candidate divergence scores modulates feature weights per-query:
 
-$$\lambda = \frac{c}{c + \text{MAD}(D_\mathcal{K})}$$
+`lambda = frac{c}{c + text{MAD}(D_mathcal{K})}`
 
 When candidates cluster tightly in divergence (low MAD), structural features are trusted. When they disagree, the system falls back to dot product scores.
 
 The combined score:
 
-$$\text{score\_final}(i) = \text{score\_dot}(i) + \lambda \cdot [\alpha_\text{div} D(i) + \alpha_\text{cent} C(i) + \alpha_\text{prof} P(i)]$$
+`text{score_final}(i) = text{score_dot}(i) + lambda cdot [alpha_text{div} D(i) + alpha_text{cent} C(i) + alpha_text{prof} P(i)]`
 
 ### 3.7 Adaptive Three-Tier Router
 
 Vote concentration — available at zero cost after retrieval — predicts query difficulty.
 
-**Tier 1 (<1 us).** Vote unanimity $\geq$ 198/200: return plurality immediately. Covers 10-15% of queries at 99.9% accuracy with zero false positives.
+**Tier 1 (<1 us).** Vote unanimity `geq` 198/200: return plurality immediately. Covers 10-15% of queries at 99.9% accuracy with zero false positives.
 
 **Tier 2 (~1.5 us).** Moderate confidence: consult dual frequency tables (pixel + edge geometry) via posterior summation. Covers 15-18%.
 
@@ -389,7 +389,7 @@ The cross-dataset transfer (+8.50pp over brute ternary kNN on the Fashion holdou
 
 ## Appendix A: Reproducibility
 
-All source code is available at [repository URL]. Data is downloaded via `make mnist` and `make fashion` from canonical sources with SHA-256 verification. All experiments are single-file C99 programs with no external dependencies beyond a C compiler with AVX2 support.
+All source code is available at https://github.com/EntroMorphic/sstt. Data is downloaded via `make mnist` and `make fashion` from canonical sources with SHA-256 verification. All experiments are single-file C99 programs with no external dependencies beyond a C compiler with AVX2 support.
 
 **Hardware.** Timing figures measured on a single x86 core: AMD Ryzen 5 PRO 5675U, 4.4 GHz boost, 512 KB L2 per core, 16 MB L3. No GPU, no multi-threading.
 
@@ -401,9 +401,9 @@ All source code is available at [repository URL]. Data is downloaded via `make m
 
 The AVX2 instruction `_mm256_sign_epi8(a, b)` computes per byte:
 
-$$\text{out}[i] = \begin{cases} a[i] & \text{if } b[i] > 0 \\ -a[i] & \text{if } b[i] < 0 \\ 0 & \text{if } b[i] = 0 \end{cases}$$
+`text{out}[i] = begin{cases} a[i] & text{if } b[i] > 0  -a[i] & text{if } b[i] < 0  0 & text{if } b[i] = 0 end{cases}`
 
-Over the ternary alphabet $b[i] \in \{-1, 0, +1\}$, this is exact multiplication: $\text{out}[i] = a[i] \cdot b[i]$. Accumulating in `int8` is safe for up to 127 iterations; MNIST's 28 blocks per row is well within bounds.
+Over the ternary alphabet `b[i] in {-1, 0, +1}`, this is exact multiplication: `text{out}[i] = a[i] cdot b[i]`. Accumulating in `int8` is safe for up to 127 iterations; MNIST's 28 blocks per row is well within bounds.
 
 This gives 32 ternary multiply-accumulates per instruction, per cycle, using register renaming rather than a multiply unit. Prior ternary neural network work (TWN, TTN) implements ternary multiplication via conditional branching or lookup tables; this approach exploits a specific x86 instruction semantic that maps exactly to the ternary algebra.
 
