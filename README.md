@@ -1,6 +1,6 @@
 # SSTT
 
-[![Build](https://github.com/anjaustin/s2t2/actions/workflows/ci.yml/badge.svg)](https://github.com/anjaustin/s2t2/actions/workflows/ci.yml)
+[![Build](https://github.com/EntroMorphic/sstt/actions/workflows/ci.yml/badge.svg)](https://github.com/EntroMorphic/sstt/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Zero-parameter ternary cascade classifier.
