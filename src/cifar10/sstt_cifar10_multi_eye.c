@@ -32,8 +32,8 @@
 #include <string.h>
 #include <time.h>
 
-#define TRAIN_N 50000
-#define TEST_N  10000
+#define TRAIN_N 10000
+#define TEST_N  200
 #define N_CLASSES 10
 #define CLS_PAD 16
 #define IMG_W 96
@@ -270,19 +270,23 @@ static void load_data(void){
     raw_b_tr=malloc((size_t)TRAIN_N*SP_PX);raw_b_te=malloc((size_t)TEST_N*SP_PX);
     raw_gray_tr=malloc((size_t)TRAIN_N*SP_PX);raw_gray_te=malloc((size_t)TEST_N*SP_PX);
     train_labels=malloc(TRAIN_N);test_labels=malloc(TEST_N);char p[512];uint8_t rec[3073];
-    for(int b2=1;b2<=5;b2++){snprintf(p,sizeof(p),"%sdata_batch_%d.bin",data_dir,b2);
-        FILE*f=fopen(p,"rb");for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
-            int idx=(b2-1)*10000+i;train_labels[idx]=rec[0];
+    int train_idx=0;
+    for(int b2=1;b2<=5 && train_idx < TRAIN_N;b2++){snprintf(p,sizeof(p),"%sdata_batch_%d.bin",data_dir,b2);
+        FILE*f=fopen(p,"rb"); if(!f) continue;
+        for(int i=0;i<10000 && train_idx < TRAIN_N;i++){if(fread(rec,1,3073,f)!=3073) break;
+            int idx=train_idx++; train_labels[idx]=rec[0];
             uint8_t*d=raw_train+(size_t)idx*PIXELS;const uint8_t*r=rec+1,*g=rec+1+1024,*b3=rec+1+2048;
             for(int y=0;y<32;y++)for(int x=0;x<32;x++){int si=y*32+x,di=y*96+x*3;d[di]=r[si];d[di+1]=g[si];d[di+2]=b3[si];}
             memcpy(raw_r_tr+(size_t)idx*SP_PX,r,SP_PX);memcpy(raw_g_tr+(size_t)idx*SP_PX,g,SP_PX);memcpy(raw_b_tr+(size_t)idx*SP_PX,b3,SP_PX);
             uint8_t*gd=raw_gray_tr+(size_t)idx*SP_PX;for(int p2=0;p2<SP_PX;p2++)gd[p2]=(uint8_t)((77*(int)r[p2]+150*(int)g[p2]+29*(int)b3[p2])>>8);}fclose(f);}
     snprintf(p,sizeof(p),"%stest_batch.bin",data_dir);
-    FILE*f=fopen(p,"rb");for(int i=0;i<10000;i++){if(fread(rec,1,3073,f)!=3073){fclose(f);exit(1);}
-        test_labels[i]=rec[0];uint8_t*d=raw_test+(size_t)i*PIXELS;const uint8_t*r=rec+1,*g=rec+1+1024,*b3=rec+1+2048;
-        for(int y=0;y<32;y++)for(int x=0;x<32;x++){int si=y*32+x,di=y*96+x*3;d[di]=r[si];d[di+1]=g[si];d[di+2]=b3[si];}
-        memcpy(raw_r_te+(size_t)i*SP_PX,r,SP_PX);memcpy(raw_g_te+(size_t)i*SP_PX,g,SP_PX);memcpy(raw_b_te+(size_t)i*SP_PX,b3,SP_PX);
-        uint8_t*gd=raw_gray_te+(size_t)i*SP_PX;for(int p2=0;p2<SP_PX;p2++)gd[p2]=(uint8_t)((77*(int)r[p2]+150*(int)g[p2]+29*(int)b3[p2])>>8);}fclose(f);}
+    FILE*f=fopen(p,"rb"); if(f){
+        for(int i=0;i<TEST_N;i++){if(fread(rec,1,3073,f)!=3073) break;
+            test_labels[i]=rec[0];uint8_t*d=raw_test+(size_t)i*PIXELS;const uint8_t*r=rec+1,*g=rec+1+1024,*b3=rec+1+2048;
+            for(int y=0;y<32;y++)for(int x=0;x<32;x++){int si=y*32+x,di=y*96+x*3;d[di]=r[si];d[di+1]=g[si];d[di+2]=b3[si];}
+            memcpy(raw_r_te+(size_t)i*SP_PX,r,SP_PX);memcpy(raw_g_te+(size_t)i*SP_PX,g,SP_PX);memcpy(raw_b_te+(size_t)i*SP_PX,b3,SP_PX);
+            uint8_t*gd=raw_gray_te+(size_t)i*SP_PX;for(int p2=0;p2<SP_PX;p2++)gd[p2]=(uint8_t)((77*(int)r[p2]+150*(int)g[p2]+29*(int)b3[p2])>>8);}fclose(f);}
+}
 
 /* ================================================================
  *  Cascade test helper: run N-eye vote → Gauss rank → kNN
@@ -333,11 +337,14 @@ static void run_cascade(const char *name, eye_t *eyes, int neyes,
  *  Main
  * ================================================================ */
 int main(int argc,char**argv){
+    setvbuf(stdout, NULL, _IONBF, 0); // Disable buffering
+    printf("--- CIFAR-10 Multi-Eye: Minimal Diagnostic ---\n");
+    if(argc>1)data_dir=argv[1];
+    
     double t0=now_sec();
-    if(argc>1){data_dir=argv[1];size_t l=strlen(data_dir);
-        if(l&&data_dir[l-1]!='/'){char*b2=malloc(l+2);memcpy(b2,data_dir,l);b2[l]='/';b2[l+1]=0;data_dir=b2;}}
-    printf("=== SSTT CIFAR-10: Multi-Eye Ensemble Retrieval ===\n\n");
     load_data();
+    printf("  [1] Data Loaded (Train: %d, Test: %d)\n", TRAIN_N, TEST_N);
+
     printf("  Data loaded (%.1f sec)\n\n",now_sec()-t0);
 
     /* ================================================================

@@ -8,6 +8,7 @@ build/
 data/
 data-fashion/
 data-cifar10/
+data-emnist/
 
 # Logs
 *.log

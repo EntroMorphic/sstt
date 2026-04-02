@@ -1,5 +1,5 @@
 /*
- * sstt_router_v1.c — Three-Tier Router: Production Edition
+ * sstt_router_v1.c — Three-Tier Router: Production Edition (Red-Team Proof)
  */
 
 #include <immintrin.h>
@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#include "sstt_fused.h"
 
 #define TRAIN_N    60000
 #define TEST_N     10000
@@ -58,18 +60,16 @@ static int16_t *divneg_train, *divneg_test, *divneg_cy_train, *divneg_cy_test;
 static int16_t *gdiv_train, *gdiv_test;
 
 static uint32_t px_map[N_BLOCKS][27][CLS_PAD] __attribute__((aligned(32)));
-static uint32_t gm_map[TOTAL_BINS][8][CLS_PAD] __attribute__((aligned(32)));
+static uint32_t hg_map[N_BLOCKS][27][CLS_PAD] __attribute__((aligned(32)));
+static uint32_t vg_map[N_BLOCKS][27][CLS_PAD] __attribute__((aligned(32)));
 
 typedef struct {
     uint32_t id, votes;
-    int32_t dot_px, dot_vg;
-    int32_t div_sim, cent_sim, prof_sim, gdiv_sim;
+    int32_t dot_px, dot_vg, div_sim, cent_sim, prof_sim, gdiv_sim;
     int64_t combined;
 } cand_t;
 
-static int *g_hist=NULL; static size_t g_hist_cap=0;
-
-/* === Boilerplate === */
+/* === BOILERPLATE === */
 static uint8_t *load_idx(const char*path,uint32_t*cnt,uint32_t*ro,uint32_t*co){FILE*f=fopen(path,"rb");if(!f){fprintf(stderr,"ERR:%s\n",path);exit(1);}uint32_t m,n;if(fread(&m,4,1,f)!=1||fread(&n,4,1,f)!=1){fclose(f);exit(1);}m=__builtin_bswap32(m);n=__builtin_bswap32(n);*cnt=n;size_t s=1;if((m&0xFF)>=3){uint32_t r,c;if(fread(&r,4,1,f)!=1||fread(&c,4,1,f)!=1){fclose(f);exit(1);}r=__builtin_bswap32(r);c=__builtin_bswap32(c);if(ro)*ro=r;if(co)*co=c;s=(size_t)r*c;}else{if(ro)*ro=0;if(co)*co=0;}size_t total=(size_t)n*s;uint8_t*d=malloc(total);if(!d||fread(d,1,total,f)!=total){fclose(f);exit(1);}fclose(f);return d;}
 static void load_data(void){uint32_t n,r,c;char p[256];snprintf(p,sizeof(p),"%strain-images-idx3-ubyte",data_dir);raw_train_img=load_idx(p,&n,&r,&c);snprintf(p,sizeof(p),"%strain-labels-idx1-ubyte",data_dir);train_labels=load_idx(p,&n,NULL,NULL);snprintf(p,sizeof(p),"%st10k-images-idx3-ubyte",data_dir);raw_test_img=load_idx(p,&n,&r,&c);snprintf(p,sizeof(p),"%st10k-labels-idx1-ubyte",data_dir);test_labels=load_idx(p,&n,NULL,NULL);}
 static inline int8_t ct(int v){return v>0?1:v<0?-1:0;}
@@ -83,24 +83,96 @@ static uint8_t enc_d(uint8_t px,uint8_t hg,uint8_t vg,uint8_t ht,uint8_t vt){int
 static void joint_sigs_fn(uint8_t*out,int n,const uint8_t*px,const uint8_t*hg,const uint8_t*vg,const uint8_t*ht,const uint8_t*vt){for(int i=0;i<n;i++){const uint8_t*pi=px+(size_t)i*SIG_PAD,*hi=hg+(size_t)i*SIG_PAD,*vi=vg+(size_t)i*SIG_PAD;const uint8_t*hti=ht+(size_t)i*TRANS_PAD,*vti=vt+(size_t)i*TRANS_PAD;uint8_t*oi=out+(size_t)i*SIG_PAD;for(int y=0;y<IMG_H;y++)for(int s=0;s<BLKS_PER_ROW;s++){int k=y*BLKS_PER_ROW+s;uint8_t htb=s>0?hti[y*H_TRANS_PER_ROW+(s-1)]:BG_TRANS;uint8_t vtb=y>0?vti[(y-1)*BLKS_PER_ROW+s]:BG_TRANS;oi[k]=enc_d(pi[k],hi[k],vi[k],htb,vtb);}memset(oi+N_BLOCKS,0xFF,SIG_PAD-N_BLOCKS);}}
 static void compute_ig(const uint8_t*sigs,int nv,uint8_t bgv,uint16_t*ig_out){int cc[N_CLASSES]={0};for(int i=0;i<TRAIN_N;i++)cc[train_labels[i]]++;double hc=0;for(int c=0;c<N_CLASSES;c++){double p=(double)cc[c]/TRAIN_N;if(p>0)hc-=p*log2(p);}double raw[N_BLOCKS],mx=0;for(int k=0;k<N_BLOCKS;k++){int*cnt=calloc((size_t)nv*N_CLASSES,sizeof(int));int*v_t=calloc(nv,sizeof(int));for(int i=0;i<TRAIN_N;i++){int v=sigs[(size_t)i*SIG_PAD+k];cnt[v*N_CLASSES+train_labels[i]]++;v_t[v]++;}double hcond=0;for(int v=0;v<nv;v++){if(!v_t[v]||v==(int)bgv)continue;double pv=(double)v_t[v]/TRAIN_N,hv=0;for(int c=0;c<N_CLASSES;c++){double pc=(double)cnt[v*N_CLASSES+c]/v_t[v];if(pc>0)hv-=pc*log2(pc);}hcond+=pv*hv;}raw[k]=hc-hcond;if(raw[k]>mx)mx=raw[k];free(cnt);free(v_t);}for(int k=0;k<N_BLOCKS;k++){ig_out[k]=mx>0?(uint16_t)(raw[k]/mx*IG_SCALE+0.5):1;if(!ig_out[k])ig_out[k]=1;}}
 static void build_index(void){long vc[BYTE_VALS]={0};for(int i=0;i<TRAIN_N;i++){const uint8_t*s=joint_tr+(size_t)i*SIG_PAD;for(int k=0;k<N_BLOCKS;k++)vc[s[k]]++;}bg=0;long mc=0;for(int v=0;v<BYTE_VALS;v++)if(vc[v]>mc){mc=vc[v];bg=(uint8_t)v;}compute_ig(joint_tr,BYTE_VALS,bg,ig_w);for(int v=0;v<BYTE_VALS;v++)for(int b=0;b<8;b++)nbr[v][b]=(uint8_t)(v^(1<<b));memset(idx_sz,0,sizeof(idx_sz));for(int i=0;i<TRAIN_N;i++){const uint8_t*s=joint_tr+(size_t)i*SIG_PAD;for(int k=0;k<N_BLOCKS;k++)if(s[k]!=bg)idx_sz[k][s[k]]++;}uint32_t tot=0;for(int k=0;k<N_BLOCKS;k++)for(int v=0;v<BYTE_VALS;v++){idx_off[k][v]=tot;tot+=idx_sz[k][v];}idx_pool=malloc((size_t)tot*sizeof(uint32_t));uint32_t(*wp)[BYTE_VALS]=malloc((size_t)N_BLOCKS*BYTE_VALS*4);memcpy(wp,idx_off,(size_t)N_BLOCKS*BYTE_VALS*4);for(int i=0;i<TRAIN_N;i++){const uint8_t*s=joint_tr+(size_t)i*SIG_PAD;for(int k=0;k<N_BLOCKS;k++)if(s[k]!=bg)idx_pool[wp[k][s[k]]++]=(uint32_t)i;}free(wp);}
-static int cmp_votes_d(const void*a,const void*b){return(int)((const cand_t*)b)->votes-(int)((const cand_t*)a)->votes;}
-static int cmp_comb_d(const void*a,const void*b){int64_t da=((const cand_t*)a)->combined,db=((const cand_t*)b)->combined;return(db>da)-(db<da);}
-static int select_top_k(const uint32_t*votes,int n,cand_t*out,int k){uint32_t mx=0;for(int i=0;i<n;i++)if(votes[i]>mx)mx=votes[i];if(!mx)return 0;if((size_t)(mx+1)>g_hist_cap){g_hist_cap=(size_t)(mx+1)+4096;free(g_hist);g_hist=malloc(g_hist_cap*sizeof(int));}memset(g_hist,0,(mx+1)*sizeof(int));for(int i=0;i<n;i++)if(votes[i])g_hist[votes[i]]++;int cum=0,thr;for(thr=(int)mx;thr>=1;thr--){cum+=g_hist[thr];if(cum>=k)break;}if(thr<1)thr=1;int nc=0;for(int i=0;i<n&&nc<k;i++)if(votes[i]>=(uint32_t)thr){out[nc]=(cand_t){0};out[nc].id=(uint32_t)i;out[nc].votes=votes[i];nc++;}qsort(out,(size_t)nc,sizeof(cand_t),cmp_votes_d);return nc;}
-static inline int32_t tdot(const int8_t*a,const int8_t*b){__m256i acc=_mm256_setzero_si256();for(int i=0;i<PADDED;i+=32)acc=_mm256_add_epi8(acc,_mm256_sign_epi8(_mm256_load_si256((const __m256i*)(a+i)),_mm256_load_si256((const __m256i*)(b+i))));__m256i lo=_mm256_cvtepi8_epi16(_mm256_castsi256_si128(acc)),hi=_mm256_cvtepi8_epi16(_mm256_extracti128_si256(acc,1));__m256i s32=_mm256_madd_epi16(_mm256_add_epi16(lo,hi),_mm256_set1_epi16(1));__m128i s=_mm_add_epi32(_mm256_castsi256_si128(s32),_mm256_extracti128_si256(s32,1));s=_mm_hadd_epi32(s,s);s=_mm_hadd_epi32(s,s);return _mm_cvtsi128_si32(s);}
+
+/* === ATOMIC OPTIMIZATIONS === */
+static int select_top_k_fast(const uint32_t* votes, cand_t* out, int k) {
+    uint32_t hist[4096] = {0}; uint32_t mx = 0;
+    for (int i = 0; i < TRAIN_N; i++) { uint32_t v = votes[i]; if (v > 0) { hist[v & 4095]++; if (v > mx) mx = v; } }
+    if (mx == 0) return 0;
+    uint32_t cum = 0, thr = mx; while (thr >= 1) { cum += hist[thr & 4095]; if (cum >= (uint32_t)k) break; thr--; }
+    int nc = 0; for (int i = 0; i < TRAIN_N && nc < k; i++) if (votes[i] >= thr) { out[nc].id = (uint32_t)i; out[nc].votes = votes[i]; nc++; }
+    return nc;
+}
+static inline int32_t hprof_dot(const int16_t* a, const int16_t* b) {
+    __m256i v0a = _mm256_loadu_si256((const __m256i*)a), v0b = _mm256_loadu_si256((const __m256i*)b);
+    __m256i m0 = _mm256_madd_epi16(v0a, v0b);
+    __m256i v1a = _mm256_loadu_si256((const __m256i*)(a + 16)), v1b = _mm256_loadu_si256((const __m256i*)(b + 16));
+    __m256i m1 = _mm256_madd_epi16(v1a, v1b);
+    __m256i s = _mm256_add_epi32(m0, m1);
+    __m128i res = _mm_add_epi32(_mm256_castsi256_si128(s), _mm256_extracti128_si256(s, 1));
+    res = _mm_add_epi32(res, _mm_shuffle_epi32(res, _MM_SHUFFLE(1, 0, 3, 2)));
+    res = _mm_add_epi32(res, _mm_shuffle_epi32(res, _MM_SHUFFLE(2, 3, 0, 1)));
+    return _mm_cvtsi128_si32(res);
+}
+static inline int32_t gdiv_l1(const int16_t* a, const int16_t* b) {
+    __m128i v1 = _mm_loadu_si128((const __m128i*)a), v2 = _mm_loadu_si128((const __m128i*)b);
+    __m128i adiff = _mm_abs_epi16(_mm_sub_epi16(v1, v2));
+    __m128i s = _mm_add_epi32(_mm_unpacklo_epi16(adiff, _mm_setzero_si128()), _mm_unpackhi_epi16(adiff, _mm_setzero_si128()));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(1, 0, 3, 2)));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(2, 3, 0, 1)));
+    return _mm_cvtsi128_si32(s);
+}
+static inline int32_t tdot_fast(const int8_t* a, const int8_t* b) {
+    __m256i acc = _mm256_setzero_si256();
+    for (int i = 0; i < PADDED; i += 32)
+        acc = _mm256_add_epi8(acc, _mm256_sign_epi8(_mm256_load_si256((const __m256i*)(b + i)), _mm256_load_si256((const __m256i*)(a + i))));
+    __m256i lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(acc)), hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(acc, 1));
+    __m256i s32 = _mm256_madd_epi16(_mm256_add_epi16(lo, hi), _mm256_set1_epi16(1));
+    __m128i s = _mm_add_epi32(_mm256_castsi256_si128(s32), _mm256_extracti128_si256(s32, 1));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(1, 0, 3, 2)));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(2, 3, 0, 1)));
+    return _mm_cvtsi128_si32(s);
+}
+static inline int16_t select_kth_i16(int16_t* a, int n, int k) {
+    int left = 0, right = n - 1;
+    while (left < right) {
+        int16_t pivot = a[k]; int i = left, j = right;
+        do { while (a[i] < pivot) i++; while (a[j] > pivot) j--; if (i <= j) { int16_t tmp = a[i]; a[i] = a[j]; a[j] = tmp; i++; j--; } } while (i <= j);
+        if (k <= j) right = j; else if (k >= i) left = i; else break;
+    }
+    return a[k];
+}
+static int compute_mad_fast(const cand_t* cands, int nc) {
+    if (nc < 3) return 1000;
+    int16_t vals[TOP_K]; for (int j = 0; j < nc; j++) vals[j] = divneg_train[cands[j].id];
+    int16_t med = select_kth_i16(vals, nc, nc / 2);
+    for (int j = 0; j < nc; j++) vals[j] = (int16_t)abs(vals[j] - med);
+    int16_t mad = select_kth_i16(vals, nc, nc / 2); return mad > 0 ? mad : 1;
+}
+static void select_top_15_cands(cand_t* cands, int nc) {
+    int n_top = (nc < 15) ? nc : 15;
+    for (int i = 0; i < n_top; i++) {
+        int best = i;
+        for (int j = i + 1; j < nc; j++) if (cands[j].combined > cands[best].combined) best = j;
+        cand_t tmp = cands[i]; cands[i] = cands[best]; cands[best] = tmp;
+    }
+}
 static inline int dc(int d){return d<-2?-2:d>2?2:d;}
 static inline uint8_t qc(int c){return c==0?0:c==1?1:c==2?2:c<=4?3:c<=8?4:c<=16?5:6;}
-static void get_px_sig(const int8_t *img, uint8_t *sig){for(int y=0;y<IMG_H;y++)for(int s=0;s<BLKS_PER_ROW;s++)sig[y*BLKS_PER_ROW+s]=benc(img[y*IMG_W+s*3],img[y*IMG_W+s*3+1],img[y*IMG_W+s*3+2]);}
 static void get_gm_sig(const int8_t *h,const int8_t *v,uint8_t *sig){memset(sig,0,TOTAL_BINS);for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int bin=(h[y*IMG_W+x]+1)*15+(v[y*IMG_W+x]+1)*5+(dc((h[y*IMG_W+x]-(x>0?h[y*IMG_W+x-1]:0))+(v[y*IMG_W+x]-(y>0?v[(y-1)*IMG_W+x]:0)))+2);sig[(y*G_DIM/IMG_H)*G_DIM*GM_BINS+(x*G_DIM/IMG_W)*GM_BINS+bin]++;}}
 static int16_t enclosed_centroid(const int8_t*tern){uint8_t grid[FG_SZ];memset(grid,0,sizeof(grid));for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++)grid[(y+1)*FG_W+(x+1)]=(tern[y*IMG_W+x]>0)?1:0;uint8_t visited[FG_SZ];memset(visited,0,sizeof(visited));int stack[FG_SZ];int sp=0;for(int y=0;y<FG_H;y++)for(int x=0;x<FG_W;x++){if(y==0||y==FG_H-1||x==0||x==FG_W-1){int pos=y*FG_W+x;if(!grid[pos]&&!visited[pos]){visited[pos]=1;stack[sp++]=pos;}}}while(sp>0){int pos=stack[--sp];int py=pos/FG_W,px2=pos%FG_W;const int dx[]={0,0,1,-1},dy[]={1,-1,0,0};for(int d=0;d<4;d++){int ny=py+dy[d],nx=px2+dx[d];if(ny<0||ny>=FG_H||nx<0||nx>=FG_W)continue;int npos=ny*FG_W+nx;if(!visited[npos]&&!grid[npos]){visited[npos]=1;stack[sp++]=npos;}}}int sum_y=0,count=0;for(int y=1;y<FG_H-1;y++)for(int x=1;x<FG_W-1;x++){int pos=y*FG_W+x;if(!grid[pos]&&!visited[pos]){sum_y+=(y-1);count++;}}return count>0?(int16_t)(sum_y/count):-1;}
 static void hprofile(const int8_t*tern,int16_t*prof){for(int y=0;y<IMG_H;y++){int c=0;for(int x=0;x<IMG_W;x++)c+=(tern[y*IMG_W+x]>0);prof[y]=(int16_t)c;}for(int y=IMG_H;y<HP_PAD;y++)prof[y]=0;}
 static void div_features(const int8_t*hg,const int8_t*vg,int16_t*ns,int16_t*cy){int neg_sum=0,neg_ysum=0,neg_cnt=0;for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int dh=(int)hg[y*IMG_W+x]-(x>0?(int)hg[y*IMG_W+x-1]:0);int dv=(int)vg[y*IMG_W+x]-(y>0?(int)vg[(y-1)*IMG_W+x]:0);int d=dh+dv;if(d<0){neg_sum+=d;neg_ysum+=y;neg_cnt++;}}*ns=(int16_t)(neg_sum<-32767?-32767:neg_sum);*cy=neg_cnt>0?(int16_t)(neg_ysum/neg_cnt):-1;}
 static void grid_div_fn(const int8_t*hg,const int8_t*vg,int16_t*out){int nr=8;int regions[8]={0};for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int dh=(int)hg[y*IMG_W+x]-(x>0?(int)hg[y*IMG_W+x-1]:0);int dv=(int)vg[y*IMG_W+x]-(y>0?(int)vg[(y-1)*IMG_W+x]:0);int d=dh+dv;if(d<0){int ry=y*2/IMG_H;int rx=x*4/IMG_W;regions[ry*4+rx]+=d;}}for(int i=0;i<nr;i++)out[i]=(int16_t)(regions[i]<-32767?-32767:regions[i]);}
-static int cmp_i16(const void*a,const void*b){return *(const int16_t*)a-*(const int16_t*)b;}
-static int compute_mad(const cand_t*cands,int nc){if(nc<3)return 1000;int16_t vals[TOP_K];for(int j=0;j<nc;j++)vals[j]=divneg_train[cands[j].id];qsort(vals,(size_t)nc,sizeof(int16_t),cmp_i16);int16_t med=vals[nc/2];int16_t devs[TOP_K];for(int j=0;j<nc;j++)devs[j]=(int16_t)abs(vals[j]-med);qsort(devs,(size_t)nc,sizeof(int16_t),cmp_i16);return devs[nc/2]>0?devs[nc/2]:1;}
+
+/* === RED-TEAM FEATURES === */
+static void compute_global_hist(const int8_t *tern, uint8_t *hist) {
+    uint16_t counts[32] = {0};
+    for (int y = 0; y < 28; y++) for (int x = 0; x < 26; x++) {
+        int b = y * 28 + x;
+        uint8_t bv = (uint8_t)((tern[b] + 1) * 9 + (tern[b + 1] + 1) * 3 + (tern[b + 2] + 1));
+        counts[bv & 31]++;
+    }
+    for (int k = 0; k < 32; k++) hist[k] = counts[k] > 255 ? 255 : (uint8_t)counts[k];
+}
+static inline int32_t hist_l1_v(const uint8_t* a, const uint8_t* b) {
+    __m256i sad = _mm256_sad_epu8(_mm256_loadu_si256((const __m256i*)a), _mm256_loadu_si256((const __m256i*)b));
+    __m128i r = _mm_add_epi64(_mm256_castsi256_si128(sad), _mm256_extracti128_si256(sad, 1));
+    return _mm_cvtsi128_si32(r) + _mm_extract_epi32(r, 2);
+}
 
 int main(int argc, char** argv) {
     if(argc > 1) data_dir = argv[1];
-    int is_fashion = strstr(data_dir, "fashion") != NULL;
     load_data();
     tern_train = aligned_alloc(32, (size_t)TRAIN_N*PADDED); tern_test = aligned_alloc(32, (size_t)TEST_N*PADDED);
     hgrad_train = aligned_alloc(32, (size_t)TRAIN_N*PADDED); hgrad_test = aligned_alloc(32, (size_t)TEST_N*PADDED);
@@ -120,28 +192,24 @@ int main(int argc, char** argv) {
     joint_sigs_fn(joint_tr,TRAIN_N,px_tr,hg_tr,vg_tr,ht_tr,vt_tr);
     joint_sigs_fn(joint_te,TEST_N,px_te,hg_te,vg_te,ht_te,vt_te);
     build_index();
-    
-    memset(px_map, 0, sizeof(px_map)); memset(gm_map, 0, sizeof(gm_map));
-    uint8_t psig[N_BLOCKS], gsig[TOTAL_BINS];
+    memset(px_map, 0, sizeof(px_map)); memset(hg_map, 0, sizeof(hg_map)); memset(vg_map, 0, sizeof(vg_map));
     for(int i=0; i<TRAIN_N; i++) {
-        int l=train_labels[i]; get_px_sig(tern_train+(size_t)i*PADDED, psig); get_gm_sig(hgrad_train+(size_t)i*PADDED, vgrad_train+(size_t)i*PADDED, gsig);
-        for(int k=0;k<N_BLOCKS;k++) px_map[k][psig[k]][l]++;
-        for(int k=0;k<TOTAL_BINS;k++) gm_map[k][qc(gsig[k])][l]++;
+        int l=train_labels[i];
+        for(int k=0;k<N_BLOCKS;k++) { px_map[k][px_tr[i*SIG_PAD+k]][l]++; hg_map[k][hg_tr[i*SIG_PAD+k]][l]++; vg_map[k][vg_tr[i*SIG_PAD+k]][l]++; }
     }
-
-    cent_train=malloc((size_t)TRAIN_N*2); cent_test=malloc((size_t)TEST_N*2);
-    for(int i=0; i<TRAIN_N; i++) cent_train[i] = enclosed_centroid(tern_train + (size_t)i*PADDED);
-    for(int i=0; i<TEST_N; i++) cent_test[i] = enclosed_centroid(tern_test + (size_t)i*PADDED);
-    divneg_train=malloc((size_t)TRAIN_N*2); divneg_test=malloc((size_t)TEST_N*2);
-    divneg_cy_train=malloc((size_t)TRAIN_N*2); divneg_cy_test=malloc((size_t)TEST_N*2);
-    for(int i=0; i<TRAIN_N; i++) div_features(hgrad_train+(size_t)i*PADDED, vgrad_train+(size_t)i*PADDED, &divneg_train[i], &divneg_cy_train[i]);
-    for(int i=0; i<TEST_N; i++) div_features(hgrad_test+(size_t)i*PADDED, vgrad_test+(size_t)i*PADDED, &divneg_test[i], &divneg_cy_test[i]);
-    gdiv_train=malloc((size_t)TRAIN_N*8*2); gdiv_test=malloc((size_t)TEST_N*8*2);
-    for(int i=0; i<TRAIN_N; i++) grid_div_fn(hgrad_train+(size_t)i*PADDED, vgrad_train+(size_t)i*PADDED, gdiv_train + (size_t)i*8);
-    for(int i=0; i<TEST_N; i++) grid_div_fn(hgrad_test+(size_t)i*PADDED, vgrad_test+(size_t)i*PADDED, gdiv_test + (size_t)i*8);
-    hprof_train=malloc((size_t)TRAIN_N*HP_PAD*2); hprof_test=malloc((size_t)TEST_N*HP_PAD*2);
-    for(int i=0; i<TRAIN_N; i++) hprofile(tern_train+(size_t)i*PADDED, hprof_train + (size_t)i*HP_PAD);
-    for(int i=0; i<TEST_N; i++) hprofile(tern_test+(size_t)i*PADDED, hprof_test + (size_t)i*HP_PAD);
+    cent_train=malloc(TRAIN_N*2); cent_test=malloc(TEST_N*2);
+    for(int i=0; i<TRAIN_N; i++) cent_train[i] = enclosed_centroid(tern_train + i*PADDED);
+    for(int i=0; i<TEST_N; i++) cent_test[i] = enclosed_centroid(tern_test + i*PADDED);
+    divneg_train=malloc(TRAIN_N*2); divneg_test=malloc(TEST_N*2);
+    divneg_cy_train=malloc(TRAIN_N*2); divneg_cy_test=malloc(TEST_N*2);
+    for(int i=0; i<TRAIN_N; i++) div_features(hgrad_train+i*PADDED, vgrad_train+i*PADDED, &divneg_train[i], &divneg_cy_train[i]);
+    for(int i=0; i<TEST_N; i++) div_features(hgrad_test+i*PADDED, vgrad_test+i*PADDED, &divneg_test[i], &divneg_cy_test[i]);
+    gdiv_train=malloc(TRAIN_N*8*2); gdiv_test=malloc(TEST_N*8*2);
+    for(int i=0; i<TRAIN_N; i++) grid_div_fn(hgrad_train+i*PADDED, vgrad_train+i*PADDED, gdiv_train + i*8);
+    for(int i=0; i<TEST_N; i++) grid_div_fn(hgrad_test+i*PADDED, vgrad_test+i*PADDED, gdiv_test + i*8);
+    hprof_train=malloc(TRAIN_N*HP_PAD*2); hprof_test=malloc(TEST_N*HP_PAD*2);
+    for(int i=0; i<TRAIN_N; i++) hprofile(tern_train+i*PADDED, hprof_train + i*HP_PAD);
+    for(int i=0; i<TEST_N; i++) hprofile(tern_test+i*PADDED, hprof_test + i*HP_PAD);
 
     printf("\n=== SSTT Router v1: Stable Production Edition ===\n\n");
     int correct=0, t1_count=0, t2_count=0, t3_count=0, t1_corr=0, t2_corr=0, t3_corr=0;
@@ -153,49 +221,63 @@ int main(int argc, char** argv) {
         for (int k = 0; k < N_BLOCKS; k++) {
             uint8_t bv = sig[k]; if (bv == bg) continue;
             uint32_t off = idx_off[k][bv]; uint16_t sz = idx_sz[k][bv];
-            const uint32_t *ids = idx_pool + off; for (uint16_t j = 0; j < sz; j++) vbuf[ids[j]] += ig_w[k];
+            const uint32_t *ids = idx_pool + off;
+            for (uint16_t j = 0; j < sz; j++) vbuf[ids[j]] += ig_w[k];
         }
-        cand_t cands[TOP_K]; int nc = select_top_k(vbuf, TRAIN_N, cands, TOP_K);
-        int counts[N_CLASSES] = {0};
-        for(int j=0; j<nc; j++) counts[train_labels[cands[j].id]]++;
-        int best_c = 0; for(int c=1; c<N_CLASSES; c++) if(counts[c] > counts[best_c]) best_c = c;
+        cand_t cands[TOP_K]; int nc = select_top_k_fast(vbuf, cands, TOP_K);
+        int counts[10] = {0}; for(int j=0; j<nc; j++) counts[train_labels[cands[j].id]]++;
+        int best_c = 0; for(int c=1; c<10; c++) if(counts[c] > counts[best_c]) best_c = c;
         int top_count = counts[best_c];
 
         int prediction = -1;
-        int t2_thresh = is_fashion ? 180 : 180;
-        int t1_thresh = is_fashion ? 198 : 198;
-
-        if (top_count >= t1_thresh) {
+        if (top_count >= 198) {
             prediction = best_c; t1_count++; if(prediction == test_labels[i]) t1_corr++;
-        } else if (top_count >= t2_thresh) {
-            uint32_t scores[N_CLASSES] = {0};
-            uint8_t psig2[N_BLOCKS], gsig2[TOTAL_BINS];
-            get_px_sig(tern_test + (size_t)i*PADDED, psig2); get_gm_sig(hgrad_test + (size_t)i*PADDED, vgrad_test + (size_t)i*PADDED, gsig2);
-            for(int k=0;k<N_BLOCKS;k++) if(psig2[k]!=0) for(int c=0;c<10;c++) scores[c]+=px_map[k][psig2[k]][c];
-            
-            float gm_weight = is_fashion ? 1.0f : 0.5f;
-            for(int k=0;k<TOTAL_BINS;k++) if(qc(gsig2[k])!=0) for(int c=0;c<10;c++) scores[c]+=(uint32_t)(gm_map[k][qc(gsig2[k])][c] * gm_weight);
-            prediction = 0; for(int c=1;c<10;c++) if(scores[c] > scores[prediction]) prediction = c;
+        } else if (top_count >= 180) {
+            prediction = sstt_fused_classify(raw_test_img + (size_t)i * PIXELS, (const uint32_t *)px_map, (const uint32_t *)hg_map, (const uint32_t *)vg_map);
             t2_count++; if(prediction == test_labels[i]) t2_corr++;
         } else {
-            int mad = compute_mad(cands, nc);
+            /* Tier 3: Topological Ranking + Geometric Jitter Rescue */
+            if (nc < 20) {
+                /* Multi-Probe Rescue: Search 8 neighbor offsets (+/- 1 pixel) */
+                int dxs[] = {-1, 1, 0, 0, -1, 1, -1, 1};
+                int dys[] = {0, 0, -1, 1, -1, -1, 1, 1};
+                for (int off = 0; off < 8; off++) {
+                    for (int y = 1; y < 27; y++) {
+                        for (int s = 0; s < 9; s++) {
+                            int b = (y + dys[off]) * 28 + s * 3 + dxs[off];
+                            if (b < 0 || b + 2 >= 784) continue;
+                            uint8_t bv = benc(tern_test[i * PADDED + b], tern_test[i * PADDED + b + 1], tern_test[i * PADDED + b + 2]);
+                            if (bv == 13) continue;
+                            uint32_t off2 = idx_off[y * 9 + s][bv];
+                            uint16_t sz2 = idx_sz[y * 9 + s][bv];
+                            const uint32_t *ids2 = idx_pool + off2;
+                            for (uint16_t j = 0; j < sz2; j++) {
+                                vbuf[ids2[j]] += ig_w[y * 9 + s] / 2; // Weight neighbors less
+                            }
+                        }
+                    }
+                }
+                nc = select_top_k_fast(vbuf, cands, TOP_K);
+            }
+
+            int mad = compute_mad_fast(cands, nc);
+
             int wc=(int)(50*50/(50+mad)), wd=(int)(50*200/(50+mad)), wg=(int)(50*100/(50+mad)), wp=(int)(50*16/(50+mad));
             for(int j=0; j<nc; j++) {
                 uint32_t cid = cands[j].id;
-                int32_t dpx = tdot(tern_test+(size_t)i*PADDED, tern_train+(size_t)cid*PADDED);
-                int32_t dvg = tdot(vgrad_test+(size_t)i*PADDED, vgrad_train+(size_t)cid*PADDED);
+                int32_t dpx = tdot_fast(tern_test+i*PADDED, tern_train+cid*PADDED);
+                int32_t dvg = tdot_fast(vgrad_test+i*PADDED, vgrad_train+cid*PADDED);
                 int16_t cc=cent_train[cid], q_cent=cent_test[i]; int32_t cs = (q_cent<0&&cc<0)?50:(q_cent<0||cc<0)?-80:-(int32_t)abs(q_cent-cc);
                 int32_t ds = -(int32_t)abs(divneg_test[i] - divneg_train[cid]);
                 if(divneg_cy_test[i]>=0 && divneg_cy_train[cid]>=0) ds -= abs(divneg_cy_test[i] - divneg_cy_train[cid])*2;
-                int32_t gs=0; for(int r=0;r<8;r++) gs += abs(gdiv_test[i*8+r]-gdiv_train[cid*8+r]);
-                int32_t ps=0; for(int y=0;y<IMG_H;y++) ps += (int32_t)hprof_test[i*HP_PAD+y]*hprof_train[cid*HP_PAD+y];
+                int32_t gs = gdiv_l1(gdiv_test + i * 8, gdiv_train + cid * 8);
+                int32_t ps = hprof_dot(hprof_test + i * HP_PAD, hprof_train + cid * HP_PAD);
                 cands[j].combined = (int64_t)256*dpx + (int64_t)192*dvg + (int64_t)wc*cs + (int64_t)wd*ds + (int64_t)wg*(-gs) + (int64_t)wp*ps;
+                cands[j].div_sim = ds; cands[j].gdiv_sim = -gs;
             }
-            qsort(cands, (size_t)nc, sizeof(cand_t), cmp_comb_d);
-            int64_t h[10] = {0}; 
-            for(int j=0; j<15 && j<nc; j++) {
+            select_top_15_cands(cands, nc);
+            int64_t h[10] = {0}; for(int j=0; j<15 && j<nc; j++) {
                 uint8_t lbl = train_labels[cands[j].id];
-                /* Add topo_w bonus to sequential evidence */
                 int64_t evidence = cands[j].combined + 100 * (cands[j].div_sim + cands[j].gdiv_sim);
                 h[lbl] += evidence * 2 / (2 + j);
             }

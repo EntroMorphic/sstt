@@ -30,10 +30,16 @@ process is transferable to any experimental ML project.
 ## Adding an Experiment
 
 1. **Name it** — `sstt_<descriptive_name>.c`, self-contained, no shared state
-   with other experiments. Place in `src/`.
+   with other experiments. Place in the appropriate `src/` subdirectory:
+   - `src/core/` — publication-ready implementations only
+   - `src/analysis/` — diagnostic and validation tools
+   - `src/ablation/` — ablation series experiments
+   - `src/cifar10/` — CIFAR-10 boundary experiments
+   - `src/archive/` — exploratory or superseded work
 2. **Add a Makefile target** — follow the existing `$(BUILD)/sstt_name` pattern.
+   Use the appropriate section in the Makefile for your target's group.
    Binaries are output to `build/` (gitignored).
-3. **Document it** — a numbered doc in `docs/` with:
+3. **Document it** — a numbered doc in `docs/contributions/` with:
    - Hypothesis
    - Architecture / implementation notes
    - Results (accuracy, speed, comparison to reference)

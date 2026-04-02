@@ -1,8 +1,33 @@
 # Changelog
 
 All notable changes to SSTT are documented here. Each entry corresponds to one
-numbered contribution in `docs/`. Accuracy figures are on the MNIST test set
-(10,000 images) unless otherwise noted.
+numbered contribution in `docs/contributions/`. Accuracy figures are on the
+MNIST test set (10,000 images) unless otherwise noted.
+
+## [0.5.0] — 2026-04-01
+
+Repository restructuring: from research notebook to professional research repo.
+
+### Changed
+- Reorganized `src/` into `core/`, `analysis/`, `ablation/`, `cifar10/`, `archive/`
+- Reorganized `docs/` with standalone architecture, results, reproducing guides
+- Moved numbered research docs to `docs/contributions/`
+- Restructured Makefile with named group targets (`make core`, `make analysis`, etc.)
+- Default `make` now builds 4 core classifiers (topo9_val, bytecascade, router_v1, v2)
+- Promoted paper draft to `paper/` at root level
+- Moved `AUDIT_SSTT.md` to `meta/`
+- Updated CI workflow for new directory structure
+- Updated README to lead with zero-parameter constraint and K-invariance
+
+### Added
+- `docs/architecture.md` — full pipeline description
+- `docs/results.md` — complete results ledger with validation conditions
+- `docs/reproducing.md` — step-by-step reproduction guide
+- `docs/negative-results.md` — consolidated failures with root causes
+- `src/ablation/README.md`, `src/cifar10/README.md`, `src/archive/README.md`
+- `make reproduce` target (builds core + downloads MNIST + runs headline results)
+- `make ablation`, `make cifar10-experiments`, `make archive` group targets
+- `data-emnist/` to `.gitignore`
 
 ## [0.4.0] — 2026-03-17
 

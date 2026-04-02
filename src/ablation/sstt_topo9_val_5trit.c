@@ -55,7 +55,7 @@
 #define MAX_REGIONS 16
 #define VAL_N      5000
 #define HOLDOUT_START 5000
-#define MAX_EYES   5
+#define MAX_EYES   6
 
 static const char *data_dir="data/";
 static double now_sec(void){struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return ts.tv_sec+ts.tv_nsec*1e-9;}
@@ -87,9 +87,10 @@ static void quant_eye2(const uint8_t*s,int8_t*d,int n){uint8_t*sr=malloc(PIXELS)
 static void quant_eye3(const uint8_t*s,int8_t*d,int n){for(int i=0;i<n;i++){const uint8_t*si=s+(size_t)i*PIXELS;int8_t*di=d+(size_t)i*PADDED;for(int j=0;j<PIXELS;j++)di[j]=si[j]>192?1:si[j]<64?-1:0;}}
 static void quant_eye4(const uint8_t*s,int8_t*d,int n){for(int i=0;i<n;i++){const uint8_t*si=s+(size_t)i*PIXELS;int8_t*di=d+(size_t)i*PADDED;for(int j=0;j<PIXELS;j++)di[j]=si[j]>160?1:si[j]<96?-1:0;}}
 static void quant_eye5(const uint8_t*s,int8_t*d,int n){uint8_t*sr=malloc(PIXELS);for(int i=0;i<n;i++){const uint8_t*si=s+(size_t)i*PIXELS;int8_t*di=d+(size_t)i*PADDED;memcpy(sr,si,PIXELS);qsort(sr,PIXELS,1,cmp_u8);uint8_t p20=sr[PIXELS/5],p80=sr[4*PIXELS/5];if(p20==p80){p20=p20>0?p20-1:0;p80=p80<255?p80+1:255;}for(int j=0;j<PIXELS;j++)di[j]=si[j]>p80?1:si[j]<p20?-1:0;}free(sr);}
+static void quant_eye6(const uint8_t*s,int8_t*d,int n){uint8_t*sr=malloc(PIXELS);for(int i=0;i<n;i++){const uint8_t*si=s+(size_t)i*PIXELS;int8_t*di=d+(size_t)i*PADDED;memcpy(sr,si,PIXELS);qsort(sr,PIXELS,1,cmp_u8);uint8_t p10=sr[PIXELS/10],p90=sr[PIXELS*9/10];if(p10==p90){p10=p10>0?p10-1:0;p90=p90<255?p90+1:255;}for(int j=0;j<PIXELS;j++)di[j]=si[j]>p90?1:si[j]<p10?-1:0;}free(sr);}
 
 typedef void (*quant_fn)(const uint8_t*,int8_t*,int);
-static quant_fn qfns[MAX_EYES] = {quant_eye1, quant_eye2, quant_eye3, quant_eye4, quant_eye5};
+static quant_fn qfns[MAX_EYES] = {quant_eye1, quant_eye2, quant_eye3, quant_eye4, quant_eye5, quant_eye6};
 
 /* === Boilerplate from topo9_val === */
 static uint8_t *load_idx(const char*path,uint32_t*cnt,uint32_t*ro,uint32_t*co){FILE*f=fopen(path,"rb");if(!f){fprintf(stderr,"ERR:%s\n",path);exit(1);}uint32_t m,n;if(fread(&m,4,1,f)!=1||fread(&n,4,1,f)!=1){fclose(f);exit(1);}m=__builtin_bswap32(m);n=__builtin_bswap32(n);*cnt=n;size_t s=1;if((m&0xFF)>=3){uint32_t r,c;if(fread(&r,4,1,f)!=1||fread(&c,4,1,f)!=1){fclose(f);exit(1);}r=__builtin_bswap32(r);c=__builtin_bswap32(c);if(ro)*ro=r;if(co)*co=c;s=(size_t)r*c;}else{if(ro)*ro=0;if(co)*co=0;}size_t total=(size_t)n*s;uint8_t*d=malloc(total);if(!d||fread(d,1,total,f)!=total){fclose(f);exit(1);}fclose(f);return d;}

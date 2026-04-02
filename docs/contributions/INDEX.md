@@ -5,7 +5,7 @@ to validated results. Original contribution numbers preserved for
 cross-reference with CHANGELOG and git history.
 
 35 archived contributions (superseded, intermediate, or exploratory)
-are in [`archived/`](archived/) with full provenance.
+are in [`archived/`](../archived/) with full provenance.
 
 ---
 
