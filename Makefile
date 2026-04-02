@@ -19,7 +19,8 @@ CORE = $(BUILD)/sstt_topo9_val \
        $(BUILD)/sstt_router_v1 \
        $(BUILD)/sstt_v2 \
        $(BUILD)/sstt_kinvariance \
-       $(BUILD)/sstt_ann_baseline
+       $(BUILD)/sstt_ann_baseline \
+       $(BUILD)/sstt_hybrid_retrieval
 
 # Analysis: diagnostic and validation tools
 ANALYSIS = $(BUILD)/sstt_diagnose \
@@ -147,6 +148,9 @@ $(BUILD)/sstt_kinvariance: src/core/sstt_kinvariance.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(BUILD)/sstt_ann_baseline: src/core/sstt_ann_baseline.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_hybrid_retrieval: src/core/sstt_hybrid_retrieval.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ================================================================
