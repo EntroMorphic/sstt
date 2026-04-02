@@ -5,6 +5,7 @@ BUILD   = build
 
 MNIST_URL   = https://ossci-datasets.s3.amazonaws.com/mnist
 FASHION_URL = https://fashion-mnist.s3-website.eu-central-1.amazonaws.com
+KMNIST_URL  = http://codh.rois.ac.jp/kmnist/dataset/kmnist
 MNIST_FILES = train-images-idx3-ubyte train-labels-idx1-ubyte \
               t10k-images-idx3-ubyte  t10k-labels-idx1-ubyte
 
@@ -16,7 +17,9 @@ MNIST_FILES = train-images-idx3-ubyte train-labels-idx1-ubyte \
 CORE = $(BUILD)/sstt_topo9_val \
        $(BUILD)/sstt_bytecascade \
        $(BUILD)/sstt_router_v1 \
-       $(BUILD)/sstt_v2
+       $(BUILD)/sstt_v2 \
+       $(BUILD)/sstt_kinvariance \
+       $(BUILD)/sstt_ann_baseline
 
 # Analysis: diagnostic and validation tools
 ANALYSIS = $(BUILD)/sstt_diagnose \
@@ -140,6 +143,12 @@ $(BUILD)/sstt_fused_test_asm: src/core/sstt_fused_test.c src/core/sstt_fused.S s
 $(BUILD)/sstt_router_hardened_test: src/core/sstt_router_hardened_test.c src/core/sstt_fused.S src/core/sstt_fused.h
 	$(CC) $(CFLAGS) -Isrc/core -o $@ src/core/sstt_router_hardened_test.c src/core/sstt_fused.S $(LDFLAGS)
 
+$(BUILD)/sstt_kinvariance: src/core/sstt_kinvariance.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_ann_baseline: src/core/sstt_ann_baseline.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 # ================================================================
 # Analysis tools (src/analysis/)
 # ================================================================
@@ -258,6 +267,15 @@ data-fashion/%.gz:
 	mkdir -p data-fashion
 	curl -sS -o $@ $(FASHION_URL)/$*.gz
 
+kmnist: $(addprefix data-kmnist/, $(MNIST_FILES))
+
+data-kmnist/%: data-kmnist/%.gz
+	gunzip -k $<
+
+data-kmnist/%.gz:
+	mkdir -p data-kmnist
+	curl -sS -o $@ $(KMNIST_URL)/$*.gz
+
 # ================================================================
 # Cleanup
 # ================================================================
@@ -266,7 +284,7 @@ clean:
 	rm -rf $(BUILD)
 
 cleanall: clean
-	rm -rf data data-fashion data-cifar10
+	rm -rf data data-fashion data-cifar10 data-kmnist
 
 .PHONY: all core analysis ablation cifar10-experiments archive \
-        experiments reproduce clean cleanall mnist fashion
+        experiments reproduce clean cleanall mnist fashion kmnist

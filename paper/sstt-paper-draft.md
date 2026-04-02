@@ -2,7 +2,7 @@
 
 **Authors:** [Names]
 
-**Abstract.** SSTT is an image classifier that uses no gradient descent, no backpropagation, and no floating-point arithmetic at inference. Classification is integer address generation: ternary quantization maps images to block signatures; an information-gain-weighted inverted index retrieves candidates; structural ranking resolves the final class. It achieves 97.27% on MNIST and 85.68% on Fashion-MNIST with no iteratively optimized parameters. We report three empirical findings: (1) **K-invariance** — accuracy is identical from K=50 to K=1000 in the retrieval stage, compressing candidate search by 1200x with zero accuracy cost and establishing that all remaining error is a ranking problem, not a retrieval problem; (2) **error mode decomposition** — 97% of classification errors occur at ranking, not retrieval, with a theoretical ceiling of 99.93% if ranking were perfect; (3) **cross-dataset transfer** — the same architecture achieves 85.68% on Fashion-MNIST (+8.50pp over brute ternary kNN on the same holdout split) with only closed-form IG re-computation and val-derived weight selection, and 50.18% on CIFAR-10 (5x random), scoping where ternary features fail. An adaptive three-tier router delivers 96.50% at 0.67ms average latency.
+**Abstract.** SSTT is an image classifier that uses no gradient descent, no backpropagation, and no floating-point arithmetic at inference. Classification is integer address generation: ternary quantization maps images to block signatures; an information-gain-weighted inverted index retrieves candidates; structural ranking resolves the final class. It achieves 97.27% on MNIST and 85.68% on Fashion-MNIST with no iteratively optimized parameters. We report three empirical findings: (1) **K-invariance in retrieval** — in the dot-product cascade, accuracy is identical from K=50 to K=1000 (1200x compression, zero cost), proving retrieval is solved; the structural ranker benefits from larger K (96.59% at K=50 to 97.61% at K=1000), revealing that richer ranking can exploit deeper candidate pools; (2) **error mode decomposition** — 97% of classification errors occur at ranking, not retrieval, with a theoretical ceiling of 99.93% if ranking were perfect; (3) **cross-dataset transfer** — the same architecture achieves 85.68% on Fashion-MNIST (+8.50pp over brute ternary kNN on the same holdout split) with only closed-form IG re-computation and val-derived weight selection, and 50.18% on CIFAR-10 (5x random), scoping where ternary features fail. An adaptive three-tier router delivers 96.50% at 0.67ms average latency.
 
 ---
 
@@ -20,7 +20,7 @@ The result achieves accuracy within the confidence interval of kNN+PCA — the s
 
 ### Contributions
 
-1. **K-invariance**: top-50 candidates contain every relevant neighbor from 60,000 training images (1200x compression, zero accuracy cost). Retrieval is solved; all remaining error is ranking.
+1. **K-invariance in retrieval**: the dot-product cascade achieves identical accuracy from K=50 to K=1000 (1200x compression, zero cost), proving the inverted index achieves near-perfect recall. The structural ranker breaks K-invariance — accuracy rises from 96.59% (K=50) to 97.61% (K=1000) — revealing that richer ranking functions can exploit deeper candidate pools.
 
 2. **Error mode decomposition**: a taxonomy classifying all errors into retrieval failures (1.7%), ranking inversions (64.5%), and vote dilutions (33.8%), with a theoretical ceiling of 99.93% (only 7 retrieval failures per 10,000 images).
 
@@ -220,9 +220,37 @@ The IG weighting concentrates vote mass on discriminative positions, creating a 
 
 **The implication is fundamental: retrieval is solved at the cascade level.** All remaining classification error is ranking, not retrieval. SSTT does not approximate kNN by trading recall for speed. It achieves equivalent recall through a structurally different representation, then ranks within a pre-filtered set.
 
-Note: K-invariance is demonstrated here on the bytepacked cascade (96.28%). The full topo9 system uses K=200; verifying K-invariance across the full topo9 ranking pipeline at varying K is future work. Given that Mode A errors (retrieval failures) are identical between the cascade and the full system (7 in both), we expect the property to hold.
+**K-sensitivity of the full system.** K-invariance holds for the cascade's dot-product ranking but breaks when structural features are added. The full topo9 system shows accuracy increasing with K:
 
-### 5.2 Error Mode Decomposition
+| K | Topo9 Accuracy | Cascade Accuracy |
+|---|---|---|
+| 50 | 96.59% | 96.28% |
+| 100 | 96.94% | 96.28% |
+| 200 | 97.27% | 96.28% |
+| 500 | 97.57% | 96.28% |
+| 1000 | 97.61% | 96.28% |
+
+The cascade ranking (dot-product only) is K-invariant: all relevant candidates appear by K=50. The structural ranker (divergence, centroid, profile features) can extract additional signal from lower-ranked candidates that the dot product cannot distinguish. Accuracy plateaus between K=500 and K=1000 (+0.04pp), suggesting diminishing returns beyond K=500. The current system uses K=200, leaving ~0.34pp on the table relative to K=1000.
+
+This decomposition clarifies the contribution: the inverted index achieves near-perfect retrieval at K=50 (proved by cascade K-invariance), and the structural ranker adds value by exploiting deeper candidate pools (proved by topo9 K-sensitivity). The two findings are complementary, not contradictory.
+
+### 5.2 Retrieval Method Comparison
+
+To isolate the inverted index's contribution, we compare three retrieval methods at K=50, all feeding the same topo9 ranker:
+
+| Method | Accuracy | Time/query | Retrieval Recall |
+|---|---|---|---|
+| SSTT Inverted Index | 96.62% | 1038 us | 99.63% |
+| Brute L2 (SAD, AVX2) | 97.49% | 2857 us | 99.73% |
+| Random Projection LSH (64-bit) | 93.46% | 131 us | 99.39% |
+
+Brute L2 nearest-neighbor retrieval at K=50 produces candidates that the topo9 ranker scores 0.87pp higher than the inverted-index candidates, despite similar retrieval recall (99.73% vs 99.63%). The L2 candidates are geometrically closer to the query in pixel space, giving the structural features more discriminative signal. However, brute L2 is 2.75x slower per query.
+
+Random projection LSH is 8x faster but retrieval quality is insufficient — 3.16pp below the inverted index and 4.03pp below brute L2.
+
+**Interpretation.** The inverted index's advantage is speed, not candidate quality. At equal K, brute L2 produces better candidates for the structural ranker. The inverted index achieves a useful speed-quality tradeoff: 96.62% at 1038us vs 97.49% at 2857us. For the full topo9 system at K=200 (its default), the inverted index achieves 97.27% — between the K=50 inverted-index result (96.62%) and the K=50 brute-L2 result (97.49%) — by compensating with more candidates.
+
+### 5.3 Error Mode Decomposition
 
 Every misclassification falls into one of three modes:
 
@@ -240,7 +268,7 @@ Structural ranking fixes 99 errors relative to the cascade — primarily ranking
 
 **Ceilings.** If a perfect ranker resolved all Mode B and C errors, only the 7 Mode A retrieval failures would remain: a theoretical ceiling of 99.93% (9993/10000). A more realistic estimate — fixing all Mode B ranking inversions but not Mode C vote dilutions (which require structural changes to the k=3 vote) — yields 99.24% for topo9 (9924/10000) or 98.68% for the bytepacked cascade (9868/10000).
 
-### 5.3 Compute Profile
+### 5.4 Compute Profile
 
 | Phase | Runtime share |
 |---|---|
@@ -251,7 +279,7 @@ Structural ranking fixes 99 errors relative to the cascade — primarily ranking
 
 The bottleneck is cache-line thrashing on a 240KB vote array during scattered writes — not arithmetic. The `_mm256_sign_epi8` dot products are effectively free. For any inverted-index system on modern hardware, memory access patterns dominate; arithmetic optimizations provide marginal benefit.
 
-### 5.4 Channel Ablation
+### 5.5 Channel Ablation
 
 **Table 5: Dot-product weight ablation on the bytepacked cascade (K=50, k=3, no structural features). Full 10K test set.**
 
@@ -264,7 +292,7 @@ The bottleneck is cache-line thrashing on a 240KB vote array during scattered wr
 
 These are cascade-only numbers (no topological features). On MNIST, h-grad adds noise (-0.17pp from pixel-only); v-grad helps (+0.34pp). On Fashion, h-grad helps (+1.33pp) because clothing textures have horizontal structure that digit strokes do not. The channel importance reversal is handled automatically: IG re-weighting assigns higher weight to h-grad positions on Fashion training data.
 
-### 5.5 Cross-Dataset Generalization
+### 5.6 Cross-Dataset Generalization
 
 | Stage | MNIST | Fashion | Changes from MNIST |
 |---|---|---|---|
@@ -275,7 +303,7 @@ These are cascade-only numbers (no topological features). On MNIST, h-grad adds 
 
 IG re-computation is closed-form (no cross-validation, no learning rate). The code is identical; the input data differs. However, the val-derived feature weights for Fashion differ from MNIST (see Section 4.2), and Bayesian sequential processing — which provides zero benefit on MNIST — contributes +1.14pp on Fashion. The generalization claim is that the *architecture* transfers without modification; the *parameters* are selected per-dataset on validation splits.
 
-### 5.6 CIFAR-10: Architectural Boundary
+### 5.7 CIFAR-10: Architectural Boundary
 
 On CIFAR-10, the ternary cascade achieves **50.18%** (5x random) with 99.44% retrieval recall.
 
@@ -299,7 +327,7 @@ We report CIFAR-10 not as a success but to scope precisely where the architectur
 
 ### 6.1 Why the Cascade Exceeds Brute kNN
 
-The cascade outperforms brute k=3 NN (97.27% vs 96.12% ternary) despite ranking fewer candidates. K-invariance explains this: the candidate set is equivalent quality at K=50 as at K=60,000. The difference is the scoring function applied to those candidates. Brute kNN ranks by a single similarity metric over all training images; the cascade applies a richer multi-channel dot product plus structural features to a pre-filtered set of 50. The total compute is not 1200x less — vote accumulation implicitly touches all 60,000 training images (87% of runtime) — but the expensive ranking comparisons operate on 1200x fewer candidates, and the richer ranking achieves higher accuracy.
+The full system outperforms brute k=3 NN (97.27% vs 96.12% ternary) by applying a richer ranking function to a pre-filtered candidate set. The retrieval comparison (Section 5.2) reveals a nuance: at equal K=50, brute L2 retrieval produces candidates that the topo9 ranker scores 0.87pp higher than inverted-index candidates (97.49% vs 96.62%). The inverted index compensates with speed (2.75x faster) and with larger K — at K=200, the inverted-index system achieves 97.27%, closing the gap. The inverted index's advantage is computational, not in candidate quality.
 
 ### 6.2 Non-Iterative Parameters
 
@@ -335,7 +363,7 @@ Three approaches that failed, with root causes:
 
 We have demonstrated that classification without iterative optimization can achieve accuracy within the confidence interval of kNN+PCA — the strongest non-iterative baseline — using a structurally different computational approach. The system uses no gradient descent, no backpropagation, and no floating-point arithmetic at inference.
 
-K-invariance is the central result: retrieval quality is effectively perfect, compressing the ranking stage by 1200x with zero accuracy cost. The remaining gap between 97.27% and the theoretical ceiling of 99.93% (7 retrieval failures in 10,000 images) is a ranking problem, not a retrieval problem. This is a precise, testable claim that defines the path forward.
+K-invariance in the dot-product cascade is the central retrieval result: the inverted index achieves near-perfect recall, compressing candidate search by 1200x with zero accuracy cost at the cascade level. The structural ranker breaks K-invariance, gaining +1.02pp from K=50 to K=1000 — revealing that richer ranking functions can exploit deeper candidate pools. At equal K=50, brute L2 retrieval produces better candidates for the structural ranker (97.49% vs 96.62%), but the inverted index is 2.75x faster and compensates with larger K. The remaining gap between 97.27% (K=200) and the theoretical ceiling of 99.93% (7 retrieval failures) is a ranking problem. This is a precise, testable claim that defines the path forward.
 
 The cross-dataset transfer (+8.50pp over brute ternary kNN on the Fashion holdout split, with val-derived weights) confirms the architecture generalizes beyond MNIST. The CIFAR-10 boundary (50.18%) confirms where it stops — ternary features capture edges but not texture. Both findings are necessary for an honest assessment of what address-generation classification can and cannot do.
 
