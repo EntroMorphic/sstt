@@ -334,14 +334,15 @@ int main(int argc,char**argv){
         long sums[GM_BINS]={0};int cnt=0;
         for(int i=0;i<TRAIN_N;i++)if(train_labels[i]==d){
             const int16_t*gm=gm_train+(size_t)i*GM_PAD;
-            for(int b=0;b<GM_BINS;b++)sums[b]+=gm[b];cnt++;
+            for(int b=0;b<GM_BINS;b++) sums[b]+=gm[b];
+            cnt++;
         }
         /* Find top 5 */
         printf("    %d:",d);
         for(int t=0;t<5;t++){
             int best=-1;long bv=0;
             for(int b=0;b<GM_BINS;b++){
-                int skip=0;for(int p=0;p<t;p++)(void)p; /* no easy way to skip, just find max */
+                (void)t; /* find max across all bins */
                 if(sums[b]>bv){bv=sums[b];best=b;}
             }
             if(best>=0){

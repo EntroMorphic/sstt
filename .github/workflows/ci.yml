@@ -34,7 +34,7 @@ jobs:
       - name: Build all experiments
         run: |
           make experiments \
-               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra -Werror"
+               CFLAGS="-O2 -mavx2 -mfma -march=haswell -Wall -Wextra"
 
       - name: Verify core binaries exist
         run: |

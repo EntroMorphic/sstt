@@ -148,28 +148,11 @@ static void select_top_15_cands(cand_t* cands, int nc) {
     }
 }
 static inline int dc(int d){return d<-2?-2:d>2?2:d;}
-static inline uint8_t qc(int c){return c==0?0:c==1?1:c==2?2:c<=4?3:c<=8?4:c<=16?5:6;}
-static void get_gm_sig(const int8_t *h,const int8_t *v,uint8_t *sig){memset(sig,0,TOTAL_BINS);for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int bin=(h[y*IMG_W+x]+1)*15+(v[y*IMG_W+x]+1)*5+(dc((h[y*IMG_W+x]-(x>0?h[y*IMG_W+x-1]:0))+(v[y*IMG_W+x]-(y>0?v[(y-1)*IMG_W+x]:0)))+2);sig[(y*G_DIM/IMG_H)*G_DIM*GM_BINS+(x*G_DIM/IMG_W)*GM_BINS+bin]++;}}
 static int16_t enclosed_centroid(const int8_t*tern){uint8_t grid[FG_SZ];memset(grid,0,sizeof(grid));for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++)grid[(y+1)*FG_W+(x+1)]=(tern[y*IMG_W+x]>0)?1:0;uint8_t visited[FG_SZ];memset(visited,0,sizeof(visited));int stack[FG_SZ];int sp=0;for(int y=0;y<FG_H;y++)for(int x=0;x<FG_W;x++){if(y==0||y==FG_H-1||x==0||x==FG_W-1){int pos=y*FG_W+x;if(!grid[pos]&&!visited[pos]){visited[pos]=1;stack[sp++]=pos;}}}while(sp>0){int pos=stack[--sp];int py=pos/FG_W,px2=pos%FG_W;const int dx[]={0,0,1,-1},dy[]={1,-1,0,0};for(int d=0;d<4;d++){int ny=py+dy[d],nx=px2+dx[d];if(ny<0||ny>=FG_H||nx<0||nx>=FG_W)continue;int npos=ny*FG_W+nx;if(!visited[npos]&&!grid[npos]){visited[npos]=1;stack[sp++]=npos;}}}int sum_y=0,count=0;for(int y=1;y<FG_H-1;y++)for(int x=1;x<FG_W-1;x++){int pos=y*FG_W+x;if(!grid[pos]&&!visited[pos]){sum_y+=(y-1);count++;}}return count>0?(int16_t)(sum_y/count):-1;}
 static void hprofile(const int8_t*tern,int16_t*prof){for(int y=0;y<IMG_H;y++){int c=0;for(int x=0;x<IMG_W;x++)c+=(tern[y*IMG_W+x]>0);prof[y]=(int16_t)c;}for(int y=IMG_H;y<HP_PAD;y++)prof[y]=0;}
 static void div_features(const int8_t*hg,const int8_t*vg,int16_t*ns,int16_t*cy){int neg_sum=0,neg_ysum=0,neg_cnt=0;for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int dh=(int)hg[y*IMG_W+x]-(x>0?(int)hg[y*IMG_W+x-1]:0);int dv=(int)vg[y*IMG_W+x]-(y>0?(int)vg[(y-1)*IMG_W+x]:0);int d=dh+dv;if(d<0){neg_sum+=d;neg_ysum+=y;neg_cnt++;}}*ns=(int16_t)(neg_sum<-32767?-32767:neg_sum);*cy=neg_cnt>0?(int16_t)(neg_ysum/neg_cnt):-1;}
 static void grid_div_fn(const int8_t*hg,const int8_t*vg,int16_t*out){int nr=8;int regions[8]={0};for(int y=0;y<IMG_H;y++)for(int x=0;x<IMG_W;x++){int dh=(int)hg[y*IMG_W+x]-(x>0?(int)hg[y*IMG_W+x-1]:0);int dv=(int)vg[y*IMG_W+x]-(y>0?(int)vg[(y-1)*IMG_W+x]:0);int d=dh+dv;if(d<0){int ry=y*2/IMG_H;int rx=x*4/IMG_W;regions[ry*4+rx]+=d;}}for(int i=0;i<nr;i++)out[i]=(int16_t)(regions[i]<-32767?-32767:regions[i]);}
 
-/* === RED-TEAM FEATURES === */
-static void compute_global_hist(const int8_t *tern, uint8_t *hist) {
-    uint16_t counts[32] = {0};
-    for (int y = 0; y < 28; y++) for (int x = 0; x < 26; x++) {
-        int b = y * 28 + x;
-        uint8_t bv = (uint8_t)((tern[b] + 1) * 9 + (tern[b + 1] + 1) * 3 + (tern[b + 2] + 1));
-        counts[bv & 31]++;
-    }
-    for (int k = 0; k < 32; k++) hist[k] = counts[k] > 255 ? 255 : (uint8_t)counts[k];
-}
-static inline int32_t hist_l1_v(const uint8_t* a, const uint8_t* b) {
-    __m256i sad = _mm256_sad_epu8(_mm256_loadu_si256((const __m256i*)a), _mm256_loadu_si256((const __m256i*)b));
-    __m128i r = _mm_add_epi64(_mm256_castsi256_si128(sad), _mm256_extracti128_si256(sad, 1));
-    return _mm_cvtsi128_si32(r) + _mm_extract_epi32(r, 2);
-}
 
 int main(int argc, char** argv) {
     if(argc > 1) data_dir = argv[1];

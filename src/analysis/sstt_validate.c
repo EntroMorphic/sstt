@@ -232,7 +232,6 @@ int main(int argc,char**argv){
     printf("=== P0 #1: Val/Test Split ===\n\n");
 
     int correct_val=0, correct_test=0, correct_all=0;
-    int pred_1nn_correct_all=0;
     double total_vote_time=0, total_rank_time=0;
     int *vote_conc = malloc(TEST_N*sizeof(int));
     int *predictions = malloc(TEST_N*sizeof(int));

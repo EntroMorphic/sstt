@@ -109,7 +109,8 @@ static uint8_t *load_idx(const char *path, uint32_t *count,
         uint32_t rows, cols;
         if (fread(&rows, 4, 1, f) != 1 || fread(&cols, 4, 1, f) != 1) { fclose(f); exit(1); }
         rows = __builtin_bswap32(rows); cols = __builtin_bswap32(cols);
-        if (rows_out) *rows_out = rows; if (cols_out) *cols_out = cols;
+        if (rows_out) *rows_out = rows;
+        if (cols_out) *cols_out = cols;
         item_size = (size_t)rows * cols;
     } else { if (rows_out) *rows_out = 0; if (cols_out) *cols_out = 0; }
     size_t total = (size_t)n * item_size;

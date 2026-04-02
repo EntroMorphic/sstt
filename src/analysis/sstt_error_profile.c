@@ -309,7 +309,6 @@ int main(int argc,char**argv){
     printf("=== Analysis 3: Margin as failure predictor ===\n\n");
     {
         /* Sort by margin, compute error rate in quintiles */
-        int sorted[TEST_N]; for(int i=0;i<TEST_N;i++) sorted[i]=i;
         /* Simple bucket by margin */
         int bins[5][2]; memset(bins,0,sizeof(bins));
         int32_t min_m=profiles[0].margin, max_m=profiles[0].margin;

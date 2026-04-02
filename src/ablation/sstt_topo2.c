@@ -124,7 +124,9 @@ static uint8_t *load_idx(const char *path, uint32_t *cnt,
         uint32_t r,c;
         if (fread(&r,4,1,f)!=1 || fread(&c,4,1,f)!=1) { fclose(f); exit(1); }
         r=__builtin_bswap32(r); c=__builtin_bswap32(c);
-        if(ro)*ro=r; if(co)*co=c; s=(size_t)r*c;
+        if(ro)*ro=r;
+        if(co)*co=c;
+        s=(size_t)r*c;
     } else { if(ro)*ro=0; if(co)*co=0; }
     size_t total=(size_t)n*s;
     uint8_t *d=malloc(total);

@@ -263,11 +263,6 @@ int main(int argc, char**argv) {
             if(prof[i].correct) map_correct[idx]++;
         }
 
-        /* Evaluate on the other half */
-        int eval_accept=0, eval_accept_correct=0;
-        int eval_reject=0, eval_reject_correct=0;
-        int eval_total=0;
-
         /* Sweep confidence thresholds */
         printf("  Fold %d (build=%s, eval=%s):\n", fold,
                fold==0?"odd":"even", fold==0?"even":"odd");

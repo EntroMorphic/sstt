@@ -135,9 +135,13 @@ static uint8_t *load_idx_file(const char *path, uint32_t *count,
         uint32_t r, c;
         if (fread(&r, 4, 1, f) != 1 || fread(&c, 4, 1, f) != 1) { fclose(f); exit(1); }
         r = __builtin_bswap32(r); c = __builtin_bswap32(c);
-        if (ro) *ro = r; if (co) *co = c;
+        if (ro) *ro = r;
+        if (co) *co = c;
         item_size = (size_t)r * c;
-    } else { if (ro) *ro = 0; if (co) *co = 0; }
+    } else {
+        if (ro) *ro = 0;
+        if (co) *co = 0;
+    }
     size_t total = (size_t)n * item_size;
     uint8_t *data = malloc(total);
     if (!data || fread(data, 1, total, f) != total) { fclose(f); exit(1); }
@@ -339,7 +343,8 @@ static int select_top_k(const uint32_t *votes, int n, cand_t *out, int k) {
     for(int i=0;i<n;i++) if(votes[i]) hist[votes[i]]++;
     int cum=0,thr;
     for(thr=(int)mx;thr>=1;thr--){cum+=hist[thr];if(cum>=k)break;}
-    if(thr<1)thr=1; free(hist);
+    if(thr<1) thr=1;
+    free(hist);
     int nc=0;
     for(int i=0;i<n&&nc<k;i++)
         if(votes[i]>=(uint32_t)thr) out[nc++]=(cand_t){(uint32_t)i,votes[i],0};
@@ -350,7 +355,7 @@ static int select_top_k(const uint32_t *votes, int n, cand_t *out, int k) {
 /* ================================================================
  *  ASCII art: display ternary image (28×28) with label
  * ================================================================ */
-static void print_ternary_img(const int8_t *img, const char *label,
+static void __attribute__((unused)) print_ternary_img(const int8_t *img, const char *label,
                                int col_offset) {
     /* Print label header */
     printf("%*s%s\n", col_offset, "", label);
