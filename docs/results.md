@@ -17,11 +17,22 @@ Hardware: x86-64 with AVX2 (tested on Zen 3 and Rocket Lake). Compiler: GCC -O3 
 | Bytepacked cascade (Encoding D) | 96.28% | 930 us | — | Doc 22 |
 | Oracle v2 (unanimity-gated) | 96.44% | 1.1 ms | — | Doc 25 |
 | Three-Tier Router | 96.50% | 0.67 ms | — | Doc 51 |
-| **Full system (topo9)** | **97.27%** | ~1 ms | val/holdout | Doc 31, 35 |
+| Full system (topo9, joint index) | 97.27% | ~1 ms | val/holdout | Doc 31, 35 |
+| **MTFP (per-channel, trit-flip)** | **97.53%** | ~1 ms | val/holdout | sstt_mtfp.c |
 
 Confidence interval: +/-0.32pp (binomial, 95% CI on 10K samples).
 
 ### Val/holdout breakdown
+
+**MTFP (current best):**
+
+| Split | Accuracy | Errors |
+|-------|----------|--------|
+| Val (images 0-4999) | 96.58% | 171 |
+| Holdout (images 5000-9999) | 98.48% | 76 |
+| Full 10K | 97.53% | 247 |
+
+**topo9 (previous, joint bytepacked index):**
 
 | Split | Accuracy | Errors |
 |-------|----------|--------|
@@ -29,7 +40,41 @@ Confidence interval: +/-0.32pp (binomial, 95% CI on 10K samples).
 | Holdout (images 5000-9999) | 98.24% | 88 |
 | Full 10K | 97.27% | 273 |
 
-The 1.94pp gap between val and holdout is data composition (the holdout half contains easier images), not overfitting. Feature weights found on val are identical to the original hardcoded weights.
+MTFP gains +0.26pp (26 fewer errors) from the trit-flip multi-probe fix and per-channel indexing. Same grid search finds the same best weights — the improvement is from retrieval topology, not feature weighting.
+
+## K-invariance and K-sensitivity
+
+**Bytepacked cascade (dot-product ranking only):** K-invariant.
+
+| K | Accuracy |
+|---|----------|
+| 50 | 96.28% |
+| 100 | 96.28% |
+| 200 | 96.28% |
+| 500 | 96.28% |
+| 1000 | 96.28% |
+
+**Full topo9 system (structural ranking):** K-sensitive.
+
+| K | Cascade | Full Topo9 |
+|---|---------|-----------|
+| 50 | 96.28% | 96.59% |
+| 100 | 96.28% | 96.94% |
+| 200 | 96.28% | 97.27% |
+| 500 | 96.28% | 97.57% |
+| 1000 | 96.28% | 97.61% |
+
+The structural ranker benefits from more candidates — it uses diverse correct-class examples that the dot product ignores. Plateau between K=500 and K=1000 (+0.04pp).
+
+## Retrieval method comparison (K=50, topo9 ranking)
+
+| Method | Accuracy | Time/query | Retrieval Recall |
+|--------|----------|------------|-----------------|
+| SSTT Inverted Index | 96.62% | 833 us | 99.63% |
+| Brute L2 (SAD, AVX2) | 97.49% | 2532 us | 99.73% |
+| Random Projection LSH | 93.46% | 101 us | 99.39% |
+
+Brute L2 produces better candidates (+0.87pp) but is 2.75x slower. L2 re-ranking of inverted-index candidates hurts (see negative results) — the inverted index's "noisy" candidates provide diversity the structural ranker needs.
 
 ## Fashion-MNIST (10,000-image test set, zero architectural changes)
 
@@ -54,27 +99,13 @@ Val-derived weights differ from MNIST: grid=3x3, w_d=50 (was 200), w_g=200 (was 
 
 This is an architectural boundary test. Edge-distinctive classes work (ship 63.7%, truck 62.1%); texture-dependent classes fail (cat 33.6%, dog 40.1%). Ternary block signatures cannot capture texture or semantic content at 32x32.
 
-## K-invariance
-
-| K | MNIST Accuracy |
-|---|----------------|
-| 50 | 96.28% |
-| 100 | 96.28% |
-| 200 | 96.28% |
-| 500 | 96.28% |
-| 1000 | 96.28% |
-
-Top-50 candidates contain all relevant neighbors from 60K training images. 1200x compression with zero recall loss.
-
 ## Error mode decomposition
 
-| Mode | Share | Description |
-|------|-------|-------------|
-| A (retrieval miss) | 1.7% | Correct class absent from top-K |
-| B (ranking inversion) | 64.5% | Correct class present, wrong class wins ranking |
-| C (vote dilution) | 33.8% | Ranking correct, k=3 majority vote dilutes |
+**Bytepacked cascade (96.28%, 372 errors):** A: 7 (1.7%), B: 240 (64.5%), C: 125 (33.8%).
 
-98.3% of errors occur at ranking, not retrieval. Fixable ceiling: ~98.6%.
+**Full topo9 (97.27%, 273 errors):** A: 7 (2.6%), B: 197 (72.2%), C: 69 (25.3%).
+
+97% of errors occur at ranking, not retrieval. Theoretical ceiling: 99.93% (only 7 retrieval failures). Realistic ceiling (fix Mode B only): 99.24% for topo9.
 
 ## Channel ablation (MNIST)
 

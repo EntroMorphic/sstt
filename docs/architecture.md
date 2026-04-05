@@ -16,15 +16,14 @@ Three independent channels
     +-- V-grad channel (vertical finite difference, clamped to {-1,0,+1})
     |
 Block encoding: 3x1 horizontal strips at 252 overlapping positions
-    Per block -> ternary signature (27 values) or bytepacked (256 values)
-    Bytepacking fuses 3 channels + transition flags into 1 byte
+    Per block -> base-27 ternary signature (3 trits = 27 values)
     |
-Inverted-index retrieval
-    For each (position, signature): look up training image IDs
+Per-channel inverted-index retrieval (3 indices: px, hg, vg)
+    For each (channel, position, signature): look up training image IDs
     Add IG-weighted votes to 60K-element accumulator
-    Multi-probe: 6-8 Hamming-1 trit-flip neighbors at half weight
+    Multi-probe: up to 6 trit-flip neighbors at half weight
     |
-Top-K candidate extraction (K=50 suffices -- K-invariance)
+Top-K candidate extraction (K=200 default)
     |
 Ranking: weighted multi-channel ternary dot product
     score = 256 * dot(pixel) + 192 * dot(v-grad)
@@ -56,15 +55,19 @@ IG(k) = H(class) - H(class | block_value_at_position_k)
 
 High-IG positions (digit centers, stroke junctions) contribute more to retrieval votes than low-IG positions (corners, flat regions). No optimization loop — one pass over training data.
 
-### Inverted-index retrieval
+### Per-channel inverted-index retrieval
 
-Standard information retrieval structure: for each (position, signature) pair, a posting list stores the training image IDs with that signature at that position. At inference, the test image's block signatures are looked up and votes accumulated with IG weights.
+Three independent inverted indices — one per channel (pixel, h-grad, v-grad) — each indexed by base-27 block signature values at 252 positions. Each channel has its own IG weights and background value. At inference, votes from all three channels accumulate into a shared 60K-element accumulator.
 
-Multi-probe expansion adds 6-8 Hamming-1 neighbors (single trit-flip variants) at half weight, capturing near-miss signatures.
+Multi-probe expansion adds up to 6 trit-flip neighbors per block signature at half weight. Each neighbor differs by exactly one trit in the base-27 encoding — a semantically correct perturbation in ternary space (unlike binary bit-flips, which corrupt the ternary encoding).
 
-### K-invariance
+### MTFP trit storage
 
-The central empirical finding: accuracy is identical from K=50 to K=1000. The top-50 candidates by vote contain every relevant neighbor from the 60,000 training images. This is a 1200x compression with zero recall loss. Retrieval is solved; all remaining error is ranking.
+Ternary data is packed 4 trits per byte (2 bits each: 01=+1, 10=0, 11=-1, 00=pad). This reduces trit array memory by 3.6x (160 MB to 45 MB for training data). Unpacking to int8 is performed on-demand for dot product and feature computation.
+
+### K-invariance and K-sensitivity
+
+In the dot-product cascade, accuracy is identical from K=50 to K=1000 — the inverted index achieves near-perfect recall at 1200x compression. The structural ranker breaks K-invariance: accuracy rises from 96.59% (K=50) to 97.61% (K=1000), because richer ranking features can exploit diverse candidates the dot product ignores.
 
 ### Ternary dot product via sign_epi8
 

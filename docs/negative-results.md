@@ -74,6 +74,22 @@ Documented failures with root cause analysis. These approaches don't work and he
 
 **Source:** `src/archive/sstt_scale_224.c`, `src/archive/sstt_scale_hierarchical.c`
 
-## Pattern
+## 7. L2 re-ranking of inverted-index candidates (-0.03 to -0.05pp)
 
-The failures share a common theme: **operators that depend on continuous or high-resolution structure fail in ternary space.** The winning features are integral measures (divergence sums, centroid positions, profile counts) rather than differential measures (Hessian eigenvalues, curl, stream functions). Summing energy over a region is robust to three-level quantization; computing how that energy changes is not.
+**Hypothesis:** Re-rank inverted-index candidates (K=500) by L2 pixel distance (SAD), select the top 50-200 geometrically closest, then apply topo9 structural ranking. Should combine the speed of the inverted index with the candidate quality of brute L2.
+
+**Result:** Accuracy dropped from 97.48% (K=500 inverted-index-only) to 97.43-97.45% (hybrid). L2 filtering made things worse.
+
+**Root cause:** Diagnostic revealed the mechanism. Image 1465 (digit 4): 49 correct-class candidates in the K=500 pool, only 2 survived the SAD filter. The correct-class candidates removed by the filter were pixel-distant but topologically similar — different handwriting styles of the same digit with the same divergence/centroid/profile patterns. The structural ranker needs diverse correct-class examples to build consensus. The SAD filter destroys this diversity by selecting for pixel uniformity.
+
+**Key insight:** The inverted index's "noise" is diversity. Retrieval provides breadth (class-diverse candidates); ranking provides depth (structural discrimination within that set). Filtering for geometric proximity undermines the breadth that makes the ranker work.
+
+**Source:** `src/core/sstt_hybrid_retrieval.c`, `src/core/sstt_hybrid_diagnose.c`
+
+## Patterns
+
+Two recurring themes:
+
+1. **Operators that depend on continuous or high-resolution structure fail in ternary space.** The winning features are integral measures (divergence sums, centroid positions, profile counts) rather than differential measures (Hessian eigenvalues, curl, stream functions). Summing energy over a region is robust to three-level quantization; computing how that energy changes is not.
+
+2. **Filtering for similarity destroys the diversity the ranker needs.** The structural ranker's power comes from seeing the same class written many different ways. Anything that selects for uniformity — L2 filtering, hard class gating, pixel-space pruning — reduces accuracy by removing the diverse exemplars that drive structural consensus.

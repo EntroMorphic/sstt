@@ -14,8 +14,8 @@ No gradient descent. No backpropagation. No floating-point arithmetic at inferen
 | Brute k=3 NN (baseline) | 96.12% | 76.86% | — | — |
 | Bytepacked cascade | 96.28% | 82.89% | 930 us | — |
 | Three-tier router | 96.50% | 83.42% | 0.67 ms | — |
-| **Full system (topo9, K=200)** | **97.27%** | **85.68%** | ~1 ms | val/holdout |
-| Full system (K=500) | 97.48% | — | ~1.3 ms | — |
+| Full system (topo9, K=200) | 97.27% | 85.68% | ~1 ms | val/holdout |
+| **MTFP (native ternary)** | **97.53%** | — | ~1 ms | val/holdout |
 | CIFAR-10 (boundary test) | 50.18% | — | ~3 ms | 5x random |
 
 Confidence interval: +/-0.32pp (binomial 95% CI on 10K samples). Full results: [docs/results.md](docs/results.md).
@@ -28,7 +28,9 @@ Confidence interval: +/-0.32pp (binomial 95% CI on 10K samples). Full results: [
 
 3. **Retrieval provides breadth, ranking provides depth.** Brute L2 retrieval at K=50 produces geometrically closer candidates (+0.87pp over inverted index at same K), but L2 re-ranking of inverted-index candidates *hurts* — the SAD filter removes pixel-distant correct-class candidates that the structural ranker needs for diversity. The inverted index's "noise" is the structural ranker's signal.
 
-4. **`_mm256_sign_epi8` as exact ternary multiply.** One AVX2 instruction performs 32 ternary multiply-accumulates per cycle over {-1, 0, +1}.
+4. **Native ternary representation (MTFP).** Converting from binary-stored trits (1 trit per int8) to packed ternary (4 trits per byte) with per-channel indexing and trit-flip multi-probe gained +0.26pp (97.27% to 97.53%) by fixing a topology bug: binary bit-flips don't correspond to ternary perturbations. 3.6x memory reduction.
+
+5. **`_mm256_sign_epi8` as exact ternary multiply.** One AVX2 instruction performs 32 ternary multiply-accumulates per cycle over {-1, 0, +1}.
 
 ## Quick start
 
@@ -36,7 +38,8 @@ Confidence interval: +/-0.32pp (binomial 95% CI on 10K samples). Full results: [
 make            # Build core classifiers
 make mnist      # Download MNIST (~53 MB)
 
-./build/sstt_topo9_val                # 97.27% MNIST (headline result)
+./build/sstt_mtfp                     # 97.53% MNIST (headline result, native ternary)
+./build/sstt_topo9_val                # 97.27% MNIST (previous best)
 ./build/sstt_bytecascade              # 96.28% MNIST (fastest single method)
 ./build/sstt_router_v1                # 96.50% at 0.67ms (production router)
 ./build/sstt_topo9_val data-fashion/  # 85.68% Fashion-MNIST (val-derived weights)
@@ -50,7 +53,7 @@ See [docs/reproducing.md](docs/reproducing.md) for full reproduction instruction
 
 ```
 src/
-  core/         Publication-ready classifiers and experiments (12 files)
+  core/         Publication-ready classifiers and experiments (14 files)
   analysis/     Diagnostic tools: error decomposition, validation (7 files)
   ablation/     Topo1-topo9 incremental ablation series (11 files)
   cifar10/      CIFAR-10 boundary experiments (37 files)
