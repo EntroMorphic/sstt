@@ -15,7 +15,7 @@ No gradient descent. No backpropagation. No floating-point arithmetic at inferen
 | Bytepacked cascade | 96.28% | 82.89% | 930 us | — |
 | Three-tier router | 96.50% | 83.42% | 0.67 ms | — |
 | Full system (topo9, K=200) | 97.27% | 85.68% | ~1 ms | val/holdout |
-| **MTFP (native ternary, K=200)** | **97.53%** | **85.88%** | ~1 ms | val/holdout |
+| **MTFP (native ternary, K=200)** | **97.53%** | **86.54%** | ~1 ms | val/holdout |
 | MTFP (K=500) | 97.63% | — | ~1.3 ms | hardcoded weights |
 | CIFAR-10 (boundary test) | 50.18% | — | ~3 ms | 5x random |
 
@@ -43,7 +43,7 @@ make mnist      # Download MNIST (~53 MB)
 ./build/sstt_topo9_val                # 97.27% MNIST (previous best)
 ./build/sstt_bytecascade              # 96.28% MNIST (fastest single method)
 ./build/sstt_router_v1                # 96.50% at 0.67ms (production router)
-./build/sstt_mtfp data-fashion/       # 85.88% Fashion-MNIST (val-derived weights)
+./build/sstt_mtfp_dsp data-fashion/    # 86.54% Fashion-MNIST (LBP + Bayesian)
 ./build/sstt_kinvariance              # K-invariance sweep on full topo9
 ./build/sstt_ann_baseline             # Retrieval method comparison
 ```

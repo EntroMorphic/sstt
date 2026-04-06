@@ -93,10 +93,49 @@ Brute L2 produces better candidates (+0.87pp) but is 2.75x slower. L2 re-ranking
 | Bytepacked cascade | 82.89% | no tuning from MNIST | — | Doc 15 |
 | Three-Tier Router | 83.42% | at 0.88 ms | — | Doc 54 |
 | Full system (topo9 + Bayesian) | 85.68% | val-derived weights | val/holdout | Doc 35 |
-| **MTFP + Pipeline** | **85.88%** | val-derived weights | val/holdout | sstt_mtfp.c |
+| MTFP + Pipeline | 85.88% | val-derived weights | val/holdout | sstt_mtfp.c |
+| **MTFP + LBP + Bayesian** | **86.54%** | val-derived weights | val/holdout | sstt_mtfp_dsp.c |
 | Router Tier 1 (9.6% coverage) | 100.00% | zero false positives | — | Doc 54 |
 
-MTFP Fashion val-derived weights: grid=3x3, w_c=25, w_p=0, w_d=50, w_g=100, sc=20. Pipeline (Bayesian→CfC) adds +1.28pp on holdout. MTFP gains +0.20pp over topo9 Bayesian on Fashion holdout (85.88% vs 85.68%).
+MTFP Fashion val-derived base weights: grid=3x3, w_c=25, w_p=0, w_d=50, w_g=100, sc=20. LBP (w=200) adds +1.00pp static. Bayesian sequential (dS=1, K=50, tw=100) adds another +0.92pp on holdout. Combined: +1.94pp over MTFP static baseline.
+
+### Fashion-MNIST error analysis
+
+**673 holdout errors** (86.54%, MTFP + LBP + Bayesian). Error structure:
+
+| Confusion pair | Errors | Classes |
+|---------------|--------|---------|
+| T-shirt ↔ Shirt (0↔6) | 133 | Upper-body |
+| Pullover ↔ Shirt (2↔6) | 102 | Upper-body |
+| Coat ↔ Shirt (4↔6) | 94 | Upper-body |
+| Pullover ↔ Coat (2↔4) | 78 | Upper-body |
+| Dress ↔ Shirt (3↔6) | 33 | Upper-body |
+| Sandal ↔ Sneaker (5↔7) | ~32 | Footwear |
+
+**61.8% of all errors are inter-confusion among four upper-body garment classes** (T-shirt, Pullover, Coat, Shirt). These share identical silhouette topology at 28x28: similar outer edges, similar enclosed regions (armholes, neckline), similar horizontal intensity profile. They differ only in collar detail (3-4 pixels), fabric texture (sub-pixel at this resolution), and sleeve width (2-3 pixels).
+
+### DSP feature ablation (Fashion-MNIST val)
+
+| Feature | Operates on | Val gain vs MTFP baseline | Val gain vs LBP |
+|---------|-------------|--------------------------|-----------------|
+| LBP (Local Binary Pattern) | raw uint8 pixels | **+1.00pp** | — |
+| Haar wavelet energy | raw uint8 pixels | +0.88pp | subsumed by LBP |
+| Gradient orientation histogram | ternary gradients | +0.00pp | +0.00pp |
+| Collar-zone WHT | raw pixels, rows 2-8 | — | +0.00pp |
+| Vertical symmetry | raw pixels | — | +0.00pp |
+| GLCM contrast | raw pixels | — | +0.00pp |
+
+LBP is the only DSP feature with signal on top of the MTFP baseline. Collar WHT, symmetry, and GLCM all fail because 28x28 resolution is below the threshold where spectral and texture features can distinguish garment types. Collar shape is 3-4 pixels, fabric texture is sub-pixel, button plackets are centered and symmetric at this resolution.
+
+### Fashion-MNIST resolution boundary
+
+The remaining ~13.5% error rate is a representational limit at 28x28 ternary. The four upper-body garment classes (0, 2, 4, 6) are genuinely indistinguishable in this representation:
+- Silhouette topology: identical (two sleeves, torso, rectangular)
+- Edge structure: identical (shoulder seams, side seams, hem)
+- LBP texture: nearly identical at 28x28 (knit vs woven is sub-pixel)
+- Spectral content: identical (same low-frequency silhouette dominates)
+
+This parallels the CIFAR-10 cat/dog boundary: ternary features capture topology but not texture or fine structural detail. No amount of feature engineering at 28x28 resolution can distinguish a plain T-shirt from a plain shirt — they are the same image at this resolution.
 
 ## CIFAR-10 (10,000-image test set, 32x32 RGB)
 

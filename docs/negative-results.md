@@ -98,12 +98,38 @@ Documented failures with root cause analysis. These approaches don't work and he
 
 **Source:** `src/core/sstt_mtfp_ensemble.c`
 
+## 9. Collar-zone WHT on Fashion-MNIST (+0.00pp)
+
+**Hypothesis:** Haar wavelet decomposition on the collar region (rows 2-8) captures frequency content that distinguishes neckline shapes: crew neck (T-shirt) vs V-neck (pullover) vs button collar (shirt). Low-frequency = smooth neckline, mid-frequency = collar detail.
+
+**Result:** Zero improvement over LBP baseline at any weight.
+
+**Root cause:** At 28 pixels per row with 3-4 pixels of collar detail, the Haar transform doesn't have enough spectral resolution. The frequency decomposition is dominated by the garment's outer edge (same for all upper-body types), not by collar fine structure. The collar signal is below the Haar transform's resolution floor.
+
+## 10. Vertical symmetry on Fashion-MNIST (+0.00pp)
+
+**Hypothesis:** Shirts with button plackets are left-right asymmetric; T-shirts and pullovers are symmetric. L1 distance between left and right halves should separate them.
+
+**Result:** Zero improvement. All garment types are similarly symmetric at 28x28.
+
+**Root cause:** The hypothesis was based on real-world garment structure, not on how garments appear at 28x28 centered grayscale. Button plackets are centered (symmetric about the vertical axis). Buttons are sub-pixel features. The Fashion-MNIST normalization produces images where all upper-body garments have comparable left-right symmetry.
+
+## 11. GLCM contrast on Fashion-MNIST (+0.00pp)
+
+**Hypothesis:** Adjacent-pixel intensity differences capture fabric texture: knit = high contrast (fine stitching), smooth = low contrast, woven = periodic contrast. Three features (horizontal, vertical, diagonal contrast) should distinguish fabric types.
+
+**Result:** Zero improvement. GLCM captures edges, not texture at this resolution.
+
+**Root cause:** At 28x28, fabric texture is below the pixel sampling rate. "Texture" in the GLCM sense is just edge density — the same information already captured by the gradient channels and divergence features. The GLCM contrast with threshold=30 is redundant with existing features.
+
 ## Patterns
 
-Three recurring themes:
+Four recurring themes:
 
 1. **Operators that depend on continuous or high-resolution structure fail in ternary space.** The winning features are integral measures (divergence sums, centroid positions, profile counts) rather than differential measures (Hessian eigenvalues, curl, stream functions). Summing energy over a region is robust to three-level quantization; computing how that energy changes is not.
 
 2. **Filtering for similarity destroys the diversity the ranker needs.** The structural ranker's power comes from seeing the same class written many different ways. Anything that selects for uniformity — L2 filtering, hard class gating, pixel-space pruning — reduces accuracy by removing the diverse exemplars that drive structural consensus.
 
 3. **Adding retrieval diversity beyond what the ranker can use provides no benefit.** Once the multi-probe topology is correct (trit-flips), the single-threshold system already retrieves all the diversity the ranker needs. Multi-threshold ensembles, which helped when multi-probe was broken, become neutral or slightly harmful when retrieval is working correctly.
+
+4. **28x28 resolution is the floor for spectral and texture features.** At this resolution, fabric texture is sub-pixel, collar detail is 3-4 pixels, and button plackets are centered and symmetric. LBP (pixel-level comparison) is the last feature with signal. Haar wavelets, GLCM, and symmetry all require more pixels to distinguish between garment types that share the same silhouette. This is the Fashion-MNIST analog of CIFAR-10's texture boundary: the representation cannot encode the distinguishing information.

@@ -58,11 +58,11 @@ MTFP full 10K: 97.53%
 ./build/sstt_router_v1
 ```
 
-### Fashion-MNIST (85.68%)
+### Fashion-MNIST (86.54% holdout, MTFP + LBP + Bayesian)
 
 ```bash
 make fashion
-./build/sstt_topo9_val data-fashion/
+./build/sstt_mtfp_dsp data-fashion/
 ```
 
 ### CIFAR-10 boundary test (50.18%)

@@ -79,6 +79,12 @@ Gradient divergence (sum of finite-difference changes in the gradient field) cap
 
 Per-query adaptive weighting: the median absolute deviation (MAD) of candidate divergence scores modulates feature weights. Tight clusters (low MAD) get high divergence weight; dispersed pools (high MAD) rely more on raw dot products.
 
+### LBP texture features
+
+Local Binary Pattern histograms computed on raw uint8 pixels (before ternary quantization) capture micro-texture information the ternary encoding destroys. Each pixel is compared to its 8 neighbors; the resulting 8-bit pattern is binned into a 4x4 spatial grid with 4 coarse bins (flat, mostly-dark, mostly-bright, edge/texture). The 64-element histogram is compared via L1 distance.
+
+LBP provides +1.00pp on Fashion-MNIST by distinguishing knit from woven from smooth fabric — information invisible to ternary block signatures. It provides zero benefit on MNIST (digits don't have texture variation). This is the highest-resolution texture descriptor that still has signal at 28x28; spectral features (Haar, WHT), symmetry, and GLCM all fail at this resolution.
+
 ### Adaptive router (3-tier)
 
 | Tier | Latency | Coverage | Accuracy | Mechanism |

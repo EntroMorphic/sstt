@@ -116,7 +116,7 @@ The K-invariance finding opened a new direction. The structural ranker keeps imp
 |------|--------|---------|
 | MNIST accuracy (MTFP) | 97.53% | Val/holdout confirmed |
 | MNIST accuracy (topo9) | 97.27% | Previous best |
-| Fashion-MNIST | 85.68% | Same architecture |
+| Fashion-MNIST | 86.54% | Same architecture + LBP texture |
 | CIFAR-10 | 50.18% | Boundary test (5x random) |
 | K-invariance | K=50 to K=1000 identical | Cascade dot-product only |
 | K-sensitivity (topo9) | 96.59% to 97.61% | K=50 to K=1000 |
