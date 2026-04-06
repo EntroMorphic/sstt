@@ -54,7 +54,7 @@ See [docs/reproducing.md](docs/reproducing.md) for full reproduction instruction
 
 ```
 src/
-  core/         Publication-ready classifiers and experiments (14 files)
+  core/         Publication-ready classifiers and experiments (17 files)
   analysis/     Diagnostic tools: error decomposition, validation (7 files)
   ablation/     Topo1-topo9 incremental ablation series (11 files)
   cifar10/      CIFAR-10 boundary experiments (37 files)
@@ -81,7 +81,7 @@ meta/       Project audit
 
 | Target | Builds |
 |--------|--------|
-| `make` | 7 core classifiers + experiments |
+| `make` | Core classifiers + experiments |
 | `make analysis` | 7 diagnostic tools |
 | `make ablation` | topo1-topo9 ablation series |
 | `make cifar10-experiments` | CIFAR-10 boundary experiments |

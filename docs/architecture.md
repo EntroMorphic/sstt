@@ -96,6 +96,14 @@ LBP provides +1.00pp on Fashion-MNIST by distinguishing knit from woven from smo
 
 Tier 1 has a zero false positive property: on Fashion-MNIST, 9.6% of images classified at 100% accuracy across 960 images.
 
+### k=3 majority vote
+
+The top-3 candidates by combined score vote by their training labels. Majority wins. This was confirmed optimal via grid search across k ∈ {1, 3, 5}: k=1 is ~0.6pp worse (lacks consensus robustness), k=5 is slightly worse than k=3 (dilutes the top candidates). The k=3 vote acts as a noise filter — a single misranked candidate cannot override two correct ones.
+
+### Bayesian sequential processing
+
+On Fashion-MNIST (but not MNIST), processing candidates in score-rank order with exponential decay provides +0.92pp. Each candidate votes for its class with weight decaying as S/(S+j), where j is the rank position. This helps on Fashion because the candidate pool is more heterogeneous — sequential decay amplifies early high-confidence candidates and suppresses later noise. On MNIST, the static ranking is already near-optimal and sequential processing adds zero.
+
 ## Compute profile
 
 | Phase | Runtime share |

@@ -73,7 +73,14 @@ make build/sstt_cifar10_cascade_gauss
 ./build/sstt_cifar10_cascade_gauss
 ```
 
-### K-invariance sweep
+### MTFP K-sweep + error diagnostics
+
+```bash
+./build/sstt_mtfp_diagnose            # MNIST Mode A/B/C at K=50..1000
+./build/sstt_mtfp_diagnose data-fashion/  # Fashion-MNIST diagnostics
+```
+
+### K-invariance sweep (topo9, historical)
 
 ```bash
 ./build/sstt_kinvariance
@@ -83,6 +90,12 @@ make build/sstt_cifar10_cascade_gauss
 
 ```bash
 ./build/sstt_ann_baseline
+```
+
+### Mechanism tuning grid (K × k × channel scale)
+
+```bash
+./build/sstt_mtfp_grid
 ```
 
 ## Build targets

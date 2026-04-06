@@ -16,7 +16,7 @@ Quick reference for explaining the system at multiple depths. Lead with the laye
 
 ## 30-Second Answer
 
-SSTT classifies images without ever learning anything. No training loop, no neural network, no weights that get adjusted. It chops every image into tiny strips, looks up which training images have the same strip patterns, and picks the best match. The whole thing runs on integer math — no floating point — and fits in the CPU's fast memory. It gets 97.53% on MNIST, comparable to methods that actually learn.
+SSTT classifies images without ever learning anything. No training loop, no neural network, no weights that get adjusted. It chops every image into tiny strips, looks up which training images have the same strip patterns, and picks the best match. The whole thing runs on integer math — no floating point — and fits in the CPU's fast memory. It gets 97.53% on MNIST and 86.54% on Fashion-MNIST, comparable to methods that actually learn.
 
 ---
 
@@ -66,8 +66,8 @@ Three things:
 
 ### "How accurate is it?"
 
-- **MNIST (handwritten digits):** 97.27% — comparable to kNN+PCA (97.55%), which is the strongest non-learning baseline. A simple 1-layer neural network gets 97.63%. We're in that neighborhood without any learning.
-- **Fashion-MNIST (clothing):** 85.68% — same architecture, different dataset, only IG weights recomputed.
+- **MNIST (handwritten digits):** 97.53% — comparable to kNN+PCA (97.55%), which is the strongest non-learning baseline. A 1-layer neural network gets 97.63%. We're in that neighborhood without any learning.
+- **Fashion-MNIST (clothing):** 86.54% — same architecture plus LBP texture features and Bayesian sequential processing. The texture features capture fabric differences (knit vs woven vs smooth) invisible to ternary block signatures.
 - **CIFAR-10 (natural images):** 50.18% — 5x random but honestly a failure. Ternary features capture edges but not texture. Cat vs dog is near chance. We report this to scope where the architecture stops.
 
 ### "How fast is it?"
@@ -92,21 +92,27 @@ Yes. Claude was instrumental in auditing the work, red-teaming the paper, runnin
 
 ### "What surprised you most?"
 
-Two things:
+Three things:
 
-First, that retrieval is essentially free. We thought finding the right candidates from 60,000 training images would be the hard part. It's not. The inverted index nails it at 50 candidates. The entire problem is ranking those 50.
+First, that retrieval is essentially solved. The MTFP per-channel trit-flip retrieval achieves zero retrieval failures on MNIST at K=500 — every correct class is findable from 60,000 training images. The theoretical ceiling is 100%. Every remaining error is ranking.
 
-Second — and we just discovered this today — that the inverted index's "noisy" candidates are actually valuable. We tried filtering them with pixel-distance to keep only the "best" ones. Accuracy went *down*. The structural ranker needs to see diverse examples of the same digit written different ways. What looks like noise to a pixel-distance metric is diversity to a topology-based ranker. Retrieval provides breadth, ranking provides depth.
+Second, that the inverted index's "noisy" candidates are actually valuable. We tried filtering them with pixel-distance to keep only the "best" ones. Accuracy went *down*. The structural ranker needs to see diverse examples of the same digit written different ways. What looks like noise to a pixel-distance metric is diversity to a topology-based ranker. Retrieval provides breadth, ranking provides depth.
+
+Third, that the multi-probe was broken from the beginning. We were doing binary bit-flips on a ternary encoding — the neighbors weren't ternary neighbors at all. Fixing this one bug (trit-flips instead of bit-flips) gained +0.26pp and eliminated all retrieval failures. The system was being held back by a representation error, not a missing feature.
 
 ### "Where does it fail?"
 
-Honestly: anywhere the visual difference between categories is texture rather than shape. Cat vs dog at 32x32 pixels is near chance (33-40%) because ternary features capture edges and contours but not fur patterns or facial features. This is an architectural boundary, not a tuning problem. No amount of ternary engineering fixes it — you need learned texture features.
+Two boundaries:
 
-On MNIST, the remaining errors are almost all 4-vs-9 and 3-vs-5 — digits that share both pixel similarity and topological structure.
+On MNIST, the remaining ~2.5% errors are 3-vs-5 and 4-vs-9 — digits that share both pixel similarity and topological structure. These are genuinely hard at 28x28.
+
+On Fashion-MNIST, ~62% of errors are confusion among four upper-body garment types (T-shirt, Pullover, Coat, Shirt). They have identical silhouettes at 28x28 and differ only in collar detail (3-4 pixels) and fabric texture (sub-pixel). We added LBP texture features which helped (+1pp), but spectral features (Haar, WHT), symmetry, and GLCM all failed — 28x28 is below the resolution floor for those approaches.
+
+On CIFAR-10, cat vs dog is near chance (33-40%). Ternary features capture edges but not texture or semantic content. This is an architectural boundary.
 
 ### "What's next?"
 
-The K-invariance finding opened a new direction. The structural ranker keeps improving with more candidates — it gains +1pp going from 50 to 1000 candidates. Today we discovered why: it needs diverse correct-class examples to build a structural consensus. The next step is designing retrieval that optimizes for diversity rather than similarity. We're at the foothills of understanding how retrieval breadth and ranking depth interact.
+The system has been thoroughly explored within the ternary block-signature architecture at 28x28. Feature engineering is exhausted — LBP was the last feature with signal. Mechanism tuning confirmed k=3 is optimal. The remaining errors are representational: the encoding cannot distinguish images that are genuinely identical at this resolution. Higher resolution input or learned features would be the next frontier, but that's a different system.
 
 ---
 
@@ -116,13 +122,13 @@ The K-invariance finding opened a new direction. The structural ranker keeps imp
 |------|--------|---------|
 | MNIST accuracy (MTFP) | 97.53% | Val/holdout confirmed |
 | MNIST accuracy (topo9) | 97.27% | Previous best |
-| Fashion-MNIST | 86.54% | Same architecture + LBP texture |
+| Fashion-MNIST | 86.54% | + LBP texture + Bayesian seq |
 | CIFAR-10 | 50.18% | Boundary test (5x random) |
 | K-invariance | K=50 to K=1000 identical | Cascade dot-product only |
 | K-sensitivity (topo9) | 96.59% to 97.61% | K=50 to K=1000 |
 | Retrieval recall | 99.63% | Correct class in top-50 |
-| Retrieval failures | 7 / 10,000 | Only errors ranking can't fix |
-| Theoretical ceiling | 99.93% | If ranking were perfect |
+| Retrieval failures (MTFP K=500) | 0 / 10,000 | Every correct class retrievable |
+| Theoretical ceiling | 100.00% | All errors are ranking |
 | Latency | <1ms | Single CPU core, no GPU |
 | Model size | ~1.3 MB | Fits in L2 cache |
 | Router Tier 1 | 99.9% accuracy | On 10% of queries, <1 microsecond |
