@@ -86,10 +86,24 @@ Documented failures with root cause analysis. These approaches don't work and he
 
 **Source:** `src/core/sstt_hybrid_retrieval.c`, `src/core/sstt_hybrid_diagnose.c`
 
+## 8. Multi-threshold MTFP ensemble (-0.03pp)
+
+**Hypothesis:** Multiple quantization thresholds (5 eyes: 85/170, 64/192, 96/160, 75/180, 105/155) feeding the MTFP per-channel pipeline with merged candidate pools should provide retrieval diversity that improves ranking.
+
+**Result:** Single-eye MTFP K=500: 97.63%. 5-eye ensemble K=500: 97.60% (-0.03pp). 5-eye K=1000: 97.64% (+0.01pp, one image). Multi-threshold does not help.
+
+**Root cause:** The MTFP trit-flip multi-probe already provides sufficient retrieval diversity at a single threshold. Adding more thresholds dilutes vote concentration — candidates from different threshold perspectives compete for top-K slots rather than complementing each other. With correct ternary neighbors, one threshold set retrieves all the diversity the ranker needs.
+
+**Note on the old 5-trit ensemble (98.42%):** The old ensemble on the exp branch used different quantization *functions* (percentile-based, absolute thresholds) with the joint bytepacked index and binary bit-flip multi-probe. The new ensemble uses different threshold *pairs* with per-channel trit-flip retrieval. These are different experiments and the comparison is not direct. The old ensemble's gains may have come from compensating for the broken binary multi-probe, but this is a hypothesis — we did not test the old ensemble with trit-flip neighbors to confirm.
+
+**Source:** `src/core/sstt_mtfp_ensemble.c`
+
 ## Patterns
 
-Two recurring themes:
+Three recurring themes:
 
 1. **Operators that depend on continuous or high-resolution structure fail in ternary space.** The winning features are integral measures (divergence sums, centroid positions, profile counts) rather than differential measures (Hessian eigenvalues, curl, stream functions). Summing energy over a region is robust to three-level quantization; computing how that energy changes is not.
 
 2. **Filtering for similarity destroys the diversity the ranker needs.** The structural ranker's power comes from seeing the same class written many different ways. Anything that selects for uniformity — L2 filtering, hard class gating, pixel-space pruning — reduces accuracy by removing the diverse exemplars that drive structural consensus.
+
+3. **Adding retrieval diversity beyond what the ranker can use provides no benefit.** Once the multi-probe topology is correct (trit-flips), the single-threshold system already retrieves all the diversity the ranker needs. Multi-threshold ensembles, which helped when multi-probe was broken, become neutral or slightly harmful when retrieval is working correctly.

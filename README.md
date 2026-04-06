@@ -15,16 +15,17 @@ No gradient descent. No backpropagation. No floating-point arithmetic at inferen
 | Bytepacked cascade | 96.28% | 82.89% | 930 us | — |
 | Three-tier router | 96.50% | 83.42% | 0.67 ms | — |
 | Full system (topo9, K=200) | 97.27% | 85.68% | ~1 ms | val/holdout |
-| **MTFP (native ternary)** | **97.53%** | — | ~1 ms | val/holdout |
+| **MTFP (native ternary, K=200)** | **97.53%** | **85.88%** | ~1 ms | val/holdout |
+| MTFP (K=500) | 97.63% | — | ~1.3 ms | hardcoded weights |
 | CIFAR-10 (boundary test) | 50.18% | — | ~3 ms | 5x random |
 
 Confidence interval: +/-0.32pp (binomial 95% CI on 10K samples). Full results: [docs/results.md](docs/results.md).
 
 ## Key findings
 
-1. **K-invariance in retrieval.** In the dot-product cascade, accuracy is identical from K=50 to K=1000 — the inverted index achieves near-perfect recall at 1200x compression. The structural ranker breaks K-invariance, gaining +1.02pp from K=50 to K=1000 by exploiting diverse candidates the dot product ignores.
+1. **K-invariance in retrieval.** In the dot-product cascade, accuracy is identical from K=50 to K=1000 — the inverted index achieves near-perfect recall at 1200x compression. The structural ranker breaks K-invariance, gaining +0.64pp from K=50 to K=1000 by exploiting diverse candidates the dot product ignores.
 
-2. **Error mode decomposition.** 1.7% retrieval miss, 64.5% ranking inversion, 33.8% vote dilution. 97% of errors occur at ranking, not retrieval. Theoretical ceiling: 99.93% (only 7 retrieval failures per 10K images).
+2. **Zero retrieval failures.** MTFP's per-channel trit-flip retrieval achieves zero Mode A errors at K=500 — every correct class is retrievable from 60,000 training images. Theoretical ceiling: **100.00%**. All 237 remaining errors are ranking failures (182 ranking inversions, 55 vote dilutions). Top confusion pairs: 3↔5 (27), 4↔9 (25).
 
 3. **Retrieval provides breadth, ranking provides depth.** Brute L2 retrieval at K=50 produces geometrically closer candidates (+0.87pp over inverted index at same K), but L2 re-ranking of inverted-index candidates *hurts* — the SAD filter removes pixel-distant correct-class candidates that the structural ranker needs for diversity. The inverted index's "noise" is the structural ranker's signal.
 
@@ -42,7 +43,7 @@ make mnist      # Download MNIST (~53 MB)
 ./build/sstt_topo9_val                # 97.27% MNIST (previous best)
 ./build/sstt_bytecascade              # 96.28% MNIST (fastest single method)
 ./build/sstt_router_v1                # 96.50% at 0.67ms (production router)
-./build/sstt_topo9_val data-fashion/  # 85.68% Fashion-MNIST (val-derived weights)
+./build/sstt_mtfp data-fashion/       # 85.88% Fashion-MNIST (val-derived weights)
 ./build/sstt_kinvariance              # K-invariance sweep on full topo9
 ./build/sstt_ann_baseline             # Retrieval method comparison
 ```

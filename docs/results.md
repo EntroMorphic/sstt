@@ -54,17 +54,26 @@ MTFP gains +0.26pp (26 fewer errors) from the trit-flip multi-probe fix and per-
 | 500 | 96.28% |
 | 1000 | 96.28% |
 
-**Full topo9 system (structural ranking):** K-sensitive.
+**MTFP system (structural ranking, per-channel trit-flip):** K-sensitive.
 
-| K | Cascade | Full Topo9 |
-|---|---------|-----------|
-| 50 | 96.28% | 96.59% |
-| 100 | 96.28% | 96.94% |
-| 200 | 96.28% | 97.27% |
-| 500 | 96.28% | 97.57% |
-| 1000 | 96.28% | 97.61% |
+| K | MTFP Accuracy | Mode A | Mode B | Mode C |
+|---|--------------|--------|--------|--------|
+| 50 | 96.99% | 17 | 206 | 78 |
+| 100 | 97.25% | 8 | 195 | 72 |
+| 200 | 97.54% | 4 | 186 | 56 |
+| 500 | 97.63% | **0** | 182 | 55 |
+| 1000 | 97.63% | 0 | 184 | 53 |
 
-The structural ranker benefits from more candidates — it uses diverse correct-class examples that the dot product ignores. Plateau between K=500 and K=1000 (+0.04pp).
+Mode A (retrieval miss) drops to zero at K=500: every correct class is retrievable. Theoretical ceiling is 100.00%. Plateau between K=500 and K=1000.
+
+**Previous topo9 system (joint bytepacked index):** Also K-sensitive but with 7 irreducible Mode A errors.
+
+| K | Topo9 Accuracy |
+|---|---------------|
+| 50 | 96.59% |
+| 200 | 97.27% |
+| 500 | 97.57% |
+| 1000 | 97.61% |
 
 ## Retrieval method comparison (K=50, topo9 ranking)
 
@@ -83,10 +92,11 @@ Brute L2 produces better candidates (+0.87pp) but is 2.75x slower. L2 re-ranking
 | Brute 1-NN (pixel L2) | 76.86% | baseline | — | — |
 | Bytepacked cascade | 82.89% | no tuning from MNIST | — | Doc 15 |
 | Three-Tier Router | 83.42% | at 0.88 ms | — | Doc 54 |
-| **Full system (topo9 + Bayesian)** | **85.68%** | val-derived weights | val/holdout | Doc 35 |
+| Full system (topo9 + Bayesian) | 85.68% | val-derived weights | val/holdout | Doc 35 |
+| **MTFP + Pipeline** | **85.88%** | val-derived weights | val/holdout | sstt_mtfp.c |
 | Router Tier 1 (9.6% coverage) | 100.00% | zero false positives | — | Doc 54 |
 
-Val-derived weights differ from MNIST: grid=3x3, w_d=50 (was 200), w_g=200 (was 100), sc=100 (was 50). Bayesian sequential processing adds +1.14pp on holdout; confirmed real (not noise like MNIST).
+MTFP Fashion val-derived weights: grid=3x3, w_c=25, w_p=0, w_d=50, w_g=100, sc=20. Pipeline (Bayesian→CfC) adds +1.28pp on holdout. MTFP gains +0.20pp over topo9 Bayesian on Fashion holdout (85.88% vs 85.68%).
 
 ## CIFAR-10 (10,000-image test set, 32x32 RGB)
 
@@ -101,11 +111,15 @@ This is an architectural boundary test. Edge-distinctive classes work (ship 63.7
 
 ## Error mode decomposition
 
+**MTFP at K=500 (97.63%, 237 errors):** A: 0 (0%), B: 182 (76.8%), C: 55 (23.2%).
+
+**MTFP at K=200 (97.54%, 246 errors):** A: 4 (1.6%), B: 186 (75.6%), C: 56 (22.8%).
+
+**topo9 at K=200 (97.27%, 273 errors):** A: 7 (2.6%), B: 197 (72.2%), C: 69 (25.3%).
+
 **Bytepacked cascade (96.28%, 372 errors):** A: 7 (1.7%), B: 240 (64.5%), C: 125 (33.8%).
 
-**Full topo9 (97.27%, 273 errors):** A: 7 (2.6%), B: 197 (72.2%), C: 69 (25.3%).
-
-97% of errors occur at ranking, not retrieval. Theoretical ceiling: 99.93% (only 7 retrieval failures). Realistic ceiling (fix Mode B only): 99.24% for topo9.
+MTFP's per-channel trit-flip retrieval eliminates all Mode A failures by K=500. Theoretical ceiling: **100.00%** (every correct class is retrievable). All remaining errors are ranking (Mode B + C). Top confusion pairs at K=200: 3↔5 (27), 4↔9 (25), 2↔7 (15).
 
 ## Channel ablation (MNIST)
 
