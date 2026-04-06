@@ -19,6 +19,7 @@ Hardware: x86-64 with AVX2 (tested on Zen 3 and Rocket Lake). Compiler: GCC -O3 
 | Three-Tier Router | 96.50% | 0.67 ms | — | Doc 51 |
 | Full system (topo9, joint index) | 97.27% | ~1 ms | val/holdout | Doc 31, 35 |
 | **MTFP (per-channel, trit-flip)** | **97.53%** | ~1 ms | val/holdout | sstt_mtfp.c |
+| MTFP (K=500, hardcoded weights) | 97.63% | ~1.3 ms | — | sstt_mtfp_diagnose.c |
 
 Confidence interval: +/-0.32pp (binomial, 95% CI on 10K samples).
 
@@ -136,6 +137,21 @@ The remaining ~13.5% error rate is a representational limit at 28x28 ternary. Th
 - Spectral content: identical (same low-frequency silhouette dominates)
 
 This parallels the CIFAR-10 cat/dog boundary: ternary features capture topology but not texture or fine structural detail. No amount of feature engineering at 28x28 resolution can distinguish a plain T-shirt from a plain shirt — they are the same image at this resolution.
+
+## Mechanism tuning (MNIST)
+
+K × k × h-grad channel scale grid search (30 configurations, all 10K, hardcoded weights):
+
+| Config | Accuracy | Notes |
+|--------|----------|-------|
+| K=200 k=3 α=100% (baseline) | 97.54% | Current default |
+| K=500 k=3 α=100% | 97.63% | K increase |
+| K=500 k=3 α=75% | 97.68% | Best in grid |
+| K=500 k=1 α=100% | 97.03% | k=1 always worse |
+
+**Statistical significance:** The alpha=75% vs alpha=100% difference is 5 images — not significant (CIs overlap). The K=500 vs K=200 difference is 14 images — directionally consistent across all configurations but not significant at p=0.05 on 10K samples. k=3 vs k=1 (~55 images, ~0.6pp) is the only significant finding.
+
+**Conclusions:** k=3 consensus vote is confirmed optimal. K=500 is marginally better than K=200 (consistent direction, not significant per-comparison). H-grad channel scaling is noise. The validated headline remains **97.53%** (K=200, val/holdout protocol).
 
 ## CIFAR-10 (10,000-image test set, 32x32 RGB)
 
