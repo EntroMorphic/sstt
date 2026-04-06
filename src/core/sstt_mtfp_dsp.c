@@ -459,6 +459,75 @@ static int run_static_dsp(const cand_t*pre,const int*nc_arr,
     return correct;
 }
 
+/* === Bayesian Sequential with DSP === */
+static int run_bayesian_dsp(const cand_t*pre,const int*nc_arr,
+                             const int16_t*qg,const int16_t*tg,int nreg,
+                             int w_c,int w_p,int w_d,int w_g,int sc,
+                             int w_lbp,int w_haar,int w_goh,
+                             int decay_S,int K_seq,int topo_w,
+                             int start,int end,uint8_t*preds){
+    int correct=0;
+    for(int i=start;i<end;i++){
+        cand_t cands[TOP_K];int nc=nc_arr[i];
+        memcpy(cands,pre+(size_t)i*TOP_K,(size_t)nc*sizeof(cand_t));
+        const int16_t*qi=qg+(size_t)i*MAX_REGIONS;
+        for(int j=0;j<nc;j++){const int16_t*ci=tg+(size_t)cands[j].id*MAX_REGIONS;int32_t l=0;for(int r=0;r<nreg;r++)l+=abs(qi[r]-ci[r]);cands[j].gdiv_sim=-l;}
+        int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
+        int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
+        int wl=(int)(s*w_lbp/(s+mad)),wh=(int)(s*w_haar/(s+mad)),wo=(int)(s*w_goh/(s+mad));
+        for(int j=0;j<nc;j++)
+            cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg
+                +(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim
+                +(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim
+                +(int64_t)wl*cands[j].lbp_sim+(int64_t)wh*cands[j].haar_sim
+                +(int64_t)wo*cands[j].goh_sim;
+        qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
+        int64_t state[N_CLASSES];memset(state,0,sizeof(state));
+        int ks=K_seq<nc?K_seq:nc;
+        for(int j=0;j<ks;j++){uint8_t lbl=train_labels[cands[j].id];int64_t evidence=cands[j].combined+(int64_t)topo_w*(cands[j].div_sim+cands[j].gdiv_sim);int64_t weight=evidence*decay_S/(decay_S+j);state[lbl]+=weight;}
+        int pred=0;for(int c=1;c<N_CLASSES;c++)if(state[c]>state[pred])pred=c;
+        if(preds)preds[i]=(uint8_t)pred;
+        if(pred==test_labels[i])correct++;
+    }
+    return correct;
+}
+
+/* === Pipeline A->B with DSP === */
+static int run_pipeline_dsp(const cand_t*pre,const int*nc_arr,
+                             const int16_t*qg,const int16_t*tg,int nreg,
+                             int w_c,int w_p,int w_d,int w_g,int sc,
+                             int w_lbp,int w_haar,int w_goh,
+                             int decay_S,int K_a,int topo_w,
+                             int gain,int exp_S,int penalty_val,int K_b,
+                             int start,int end,uint8_t*preds){
+    int correct=0;
+    for(int i=start;i<end;i++){
+        cand_t cands[TOP_K];int nc=nc_arr[i];
+        memcpy(cands,pre+(size_t)i*TOP_K,(size_t)nc*sizeof(cand_t));
+        const int16_t*qi=qg+(size_t)i*MAX_REGIONS;
+        for(int j=0;j<nc;j++){const int16_t*ci=tg+(size_t)cands[j].id*MAX_REGIONS;int32_t l=0;for(int r=0;r<nreg;r++)l+=abs(qi[r]-ci[r]);cands[j].gdiv_sim=-l;}
+        int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
+        int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
+        int wl=(int)(s*w_lbp/(s+mad)),wh=(int)(s*w_haar/(s+mad)),wo=(int)(s*w_goh/(s+mad));
+        for(int j=0;j<nc;j++)
+            cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg
+                +(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim
+                +(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim
+                +(int64_t)wl*cands[j].lbp_sim+(int64_t)wh*cands[j].haar_sim
+                +(int64_t)wo*cands[j].goh_sim;
+        qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
+        int64_t h[N_CLASSES];memset(h,0,sizeof(h));
+        int ka=K_a<nc?K_a:nc;
+        for(int j=0;j<ka;j++){uint8_t lbl=train_labels[cands[j].id];int64_t evidence=cands[j].combined+(int64_t)topo_w*(cands[j].div_sim+cands[j].gdiv_sim);int64_t weight=evidence*decay_S/(decay_S+j);h[lbl]+=weight;}
+        int kb_end=ka+K_b;if(kb_end>nc)kb_end=nc;
+        for(int j=ka;j<kb_end;j++){uint8_t lbl=train_labels[cands[j].id];int64_t evidence=cands[j].combined/256;int64_t decay_num=(int64_t)exp_S;int64_t decay_den=(int64_t)exp_S+1;for(int c=0;c<N_CLASSES;c++){int64_t input=(c==lbl)?(int64_t)gain*evidence:-(int64_t)penalty_val;h[c]=(decay_num*h[c]+input)/decay_den;}}
+        int pred=0;for(int c=1;c<N_CLASSES;c++)if(h[c]>h[pred])pred=c;
+        if(preds)preds[i]=(uint8_t)pred;
+        if(pred==test_labels[i])correct++;
+    }
+    return correct;
+}
+
 static void report(const uint8_t*preds,const char*label,int correct,int start,int end){
     int n=end-start;
     printf("--- %s ---\n",label);printf("  Accuracy: %.2f%%  (%d/%d correct, %d errors)\n",100.0*correct/n,correct,n,n-correct);
@@ -705,6 +774,58 @@ int main(int argc,char**argv){
         printf("  Run: ./build/sstt_mtfp_dsp data-fashion/\n");
         printf("  (best DSP weights: lbp=%d haar=%d goh=%d)\n\n",
                best_all_lbp,best_all_haar,best_all_goh);
+    }
+
+    /* ================================================================
+     * PHASE 4: Sequential processing with DSP features (val search)
+     * ================================================================ */
+    printf("=== PHASE 4: Bayesian Sequential + DSP (val only) ===\n");
+    {
+        int best_c=baseline,best_dS=0,best_Ks=0,best_tw=0;
+        int dS_vals[]={1,2,4};int Ks_vals[]={10,20,50};int tw_vals[]={50,100,200};
+        for(int di=0;di<3;di++)for(int ki=0;ki<3;ki++)for(int ti=0;ti<3;ti++){
+            int c=run_bayesian_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                                    best_all_lbp,best_all_haar,best_all_goh,
+                                    dS_vals[di],Ks_vals[ki],tw_vals[ti],0,VAL_N,NULL);
+            if(c>best_c){best_c=c;best_dS=dS_vals[di];best_Ks=Ks_vals[ki];best_tw=tw_vals[ti];}
+        }
+        printf("  Best Bayesian+DSP (val): dS=%d K=%d tw=%d -> %.2f%% (%+d vs static+DSP)\n",
+               best_dS,best_Ks,best_tw,100.0*best_c/VAL_N,best_c-best_all_c);
+
+        if(best_c>best_all_c){
+            int hold_seq=run_bayesian_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                                           best_all_lbp,best_all_haar,best_all_goh,
+                                           best_dS,best_Ks,best_tw,HOLDOUT_START,TEST_N,preds);
+            printf("  Bayesian+DSP holdout: %.2f%% (%d/%d)\n",100.0*hold_seq/hold_n,hold_seq,hold_n);
+            report(preds,"Bayesian+DSP (holdout)",hold_seq,HOLDOUT_START,TEST_N);
+        } else printf("  No improvement over static+DSP on val.\n\n");
+    }
+
+    printf("=== PHASE 5: Pipeline A->B + DSP (val only) ===\n");
+    {
+        int best_c=baseline,best_dS=0,best_Ka=0,best_tw=0,best_g=0,best_eS=0,best_p=0,best_Kb=0;
+        int dS_vals[]={1,2};int Ka_vals[]={3,10};int tw_vals[]={50,100};
+        int g_vals[]={2,8};int eS_vals[]={5,20};int p_vals[]={1,5};int Kb_vals[]={10,20};
+        for(int di=0;di<2;di++)for(int ki=0;ki<2;ki++)for(int ti=0;ti<2;ti++)
+        for(int gi=0;gi<2;gi++)for(int ei=0;ei<2;ei++)for(int pi=0;pi<2;pi++)for(int bi=0;bi<2;bi++){
+            int c=run_pipeline_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                                    best_all_lbp,best_all_haar,best_all_goh,
+                                    dS_vals[di],Ka_vals[ki],tw_vals[ti],
+                                    g_vals[gi],eS_vals[ei],p_vals[pi],Kb_vals[bi],0,VAL_N,NULL);
+            if(c>best_c){best_c=c;best_dS=dS_vals[di];best_Ka=Ka_vals[ki];best_tw=tw_vals[ti];
+                         best_g=g_vals[gi];best_eS=eS_vals[ei];best_p=p_vals[pi];best_Kb=Kb_vals[bi];}
+        }
+        printf("  Best Pipeline+DSP (val): dS=%d Ka=%d tw=%d g=%d eS=%d p=%d Kb=%d -> %.2f%% (%+d vs static+DSP)\n",
+               best_dS,best_Ka,best_tw,best_g,best_eS,best_p,best_Kb,100.0*best_c/VAL_N,best_c-best_all_c);
+
+        if(best_c>best_all_c){
+            int hold_seq=run_pipeline_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                                           best_all_lbp,best_all_haar,best_all_goh,
+                                           best_dS,best_Ka,best_tw,
+                                           best_g,best_eS,best_p,best_Kb,HOLDOUT_START,TEST_N,preds);
+            printf("  Pipeline+DSP holdout: %.2f%% (%d/%d)\n",100.0*hold_seq/hold_n,hold_seq,hold_n);
+            report(preds,"Pipeline+DSP (holdout)",hold_seq,HOLDOUT_START,TEST_N);
+        } else printf("  No improvement over static+DSP on val.\n\n");
     }
 
     printf("Total: %.2f sec\n",now_sec()-t0);
