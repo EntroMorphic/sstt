@@ -23,7 +23,8 @@ CORE = $(BUILD)/sstt_topo9_val \
        $(BUILD)/sstt_hybrid_retrieval \
        $(BUILD)/sstt_mtfp \
        $(BUILD)/sstt_mtfp_diagnose \
-       $(BUILD)/sstt_mtfp_ensemble
+       $(BUILD)/sstt_mtfp_ensemble \
+       $(BUILD)/sstt_mtfp_dsp
 
 # Analysis: diagnostic and validation tools
 ANALYSIS = $(BUILD)/sstt_diagnose \
@@ -163,6 +164,9 @@ $(BUILD)/sstt_mtfp_diagnose: src/core/sstt_mtfp_diagnose.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(BUILD)/sstt_mtfp_ensemble: src/core/sstt_mtfp_ensemble.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_mtfp_dsp: src/core/sstt_mtfp_dsp.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ================================================================
