@@ -56,6 +56,15 @@
 #define GOH_BINS   4
 #define GOH_DIM    (GOH_GRID*GOH_GRID*GOH_BINS)    /* 64 */
 
+/* Phase 2 DSP features */
+#define CWHT_ROWS_START 2
+#define CWHT_ROWS_END   9
+#define CWHT_N_ROWS     (CWHT_ROWS_END-CWHT_ROWS_START) /* 7 collar rows */
+#define CWHT_BANDS      4  /* energy in 4 frequency bands per row, summed */
+#define CWHT_DIM        CWHT_BANDS
+#define SYMM_DIM        1  /* single scalar */
+#define GLCM_DIM        3  /* h-contrast, v-contrast, ratio */
+
 static const char *data_dir="data/";
 static double now_sec(void){struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return ts.tv_sec+ts.tv_nsec*1e-9;}
 
@@ -85,10 +94,15 @@ static int16_t *cent_train,*cent_test,*hprof_train,*hprof_test;
 static int16_t *divneg_train,*divneg_test,*divneg_cy_train,*divneg_cy_test;
 static int16_t *gdiv_3x3_train,*gdiv_3x3_test;
 
-/* DSP features */
+/* DSP features (phase 1) */
 static uint16_t *lbp_train,*lbp_test;   /* [N][LBP_DIM] */
 static int16_t  *haar_train,*haar_test;  /* [N][HAAR_DIM] */
 static uint16_t *goh_train,*goh_test;    /* [N][GOH_DIM] */
+
+/* DSP features (phase 2) */
+static int16_t *cwht_train,*cwht_test;   /* [N][CWHT_DIM] */
+static int32_t *symm_train,*symm_test;   /* [N] */
+static int16_t *glcm_train,*glcm_test;   /* [N][GLCM_DIM] */
 
 static int *g_hist=NULL;static size_t g_hist_cap=0;
 
@@ -354,6 +368,93 @@ static inline int32_t goh_similarity(const uint16_t*a,const uint16_t*b){
     return sim;
 }
 
+/* === Phase 2 DSP: Collar WHT, Symmetry, GLCM === */
+
+/* Collar-zone WHT energy: 1D Haar wavelet on rows CWHT_ROWS_START..CWHT_ROWS_END
+ * For each collar row, compute 3 levels of Haar detail energy on 28 pixels (pad to 32).
+ * Sum absolute detail coefficients per level across all collar rows.
+ * Output: 4 energy values (level 0=DC, 1=fine, 2=mid, 3=coarse) */
+static void compute_cwht(const uint8_t *raw, int16_t *out) {
+    int32_t band[CWHT_BANDS]; memset(band, 0, sizeof(band));
+    for (int y = CWHT_ROWS_START; y < CWHT_ROWS_END; y++) {
+        int16_t buf[32]; memset(buf, 0, sizeof(buf));
+        for (int x = 0; x < IMG_W; x++) buf[x] = (int16_t)raw[y * IMG_W + x];
+        /* 3-level Haar: 32 -> 16+16 -> 8+8+16 -> 4+4+8+16 */
+        int16_t tmp[32];
+        /* Level 1: pairs of adjacent */
+        for (int i = 0; i < 16; i++) { tmp[i] = (buf[2*i] + buf[2*i+1]) / 2; tmp[16+i] = buf[2*i] - buf[2*i+1]; }
+        int32_t e1 = 0; for (int i = 16; i < 32; i++) e1 += abs(tmp[i]);
+        /* Level 2 */
+        int16_t t2[16];
+        for (int i = 0; i < 8; i++) { t2[i] = (tmp[2*i] + tmp[2*i+1]) / 2; t2[8+i] = tmp[2*i] - tmp[2*i+1]; }
+        int32_t e2 = 0; for (int i = 8; i < 16; i++) e2 += abs(t2[i]);
+        /* Level 3 */
+        int16_t t3[8];
+        for (int i = 0; i < 4; i++) { t3[i] = (t2[2*i] + t2[2*i+1]) / 2; t3[4+i] = t2[2*i] - t2[2*i+1]; }
+        int32_t e3 = 0; for (int i = 4; i < 8; i++) e3 += abs(t3[i]);
+        int32_t dc = 0; for (int i = 0; i < 4; i++) dc += abs(t3[i]);
+        band[0] += dc; band[1] += e1; band[2] += e2; band[3] += e3;
+    }
+    for (int i = 0; i < CWHT_BANDS; i++)
+        out[i] = (int16_t)(band[i] > 32767 ? 32767 : band[i]);
+}
+
+static void compute_cwht_all(const uint8_t *raw, int16_t *out, int n) {
+    for (int i = 0; i < n; i++)
+        compute_cwht(raw + (size_t)i * PIXELS, out + (size_t)i * CWHT_DIM);
+}
+
+/* Vertical symmetry: L1 distance between left and right halves.
+ * Low = symmetric (T-shirt, pullover). High = asymmetric (shirt with buttons). */
+static int32_t compute_symmetry(const uint8_t *raw) {
+    int32_t asym = 0;
+    for (int y = 0; y < IMG_H; y++)
+        for (int x = 0; x < IMG_W / 2; x++)
+            asym += abs((int)raw[y * IMG_W + x] - (int)raw[y * IMG_W + (IMG_W - 1 - x)]);
+    return asym;
+}
+
+static void compute_symmetry_all(const uint8_t *raw, int32_t *out, int n) {
+    for (int i = 0; i < n; i++)
+        out[i] = compute_symmetry(raw + (size_t)i * PIXELS);
+}
+
+/* GLCM-inspired contrast: count of adjacent pixel differences above threshold.
+ * Captures texture regularity. Three features: h-contrast, v-contrast, diagonal. */
+static void compute_glcm(const uint8_t *raw, int16_t *out) {
+    int h_ct = 0, v_ct = 0, d_ct = 0;
+    int thresh = 30; /* empirical: ~12% of max range */
+    for (int y = 0; y < IMG_H; y++)
+        for (int x = 0; x < IMG_W; x++) {
+            int p = raw[y * IMG_W + x];
+            if (x < IMG_W - 1 && abs(p - (int)raw[y * IMG_W + x + 1]) > thresh) h_ct++;
+            if (y < IMG_H - 1 && abs(p - (int)raw[(y + 1) * IMG_W + x]) > thresh) v_ct++;
+            if (x < IMG_W - 1 && y < IMG_H - 1 && abs(p - (int)raw[(y + 1) * IMG_W + x + 1]) > thresh) d_ct++;
+        }
+    out[0] = (int16_t)(h_ct > 32767 ? 32767 : h_ct);
+    out[1] = (int16_t)(v_ct > 32767 ? 32767 : v_ct);
+    out[2] = (int16_t)(d_ct > 32767 ? 32767 : d_ct);
+}
+
+static void compute_glcm_all(const uint8_t *raw, int16_t *out, int n) {
+    for (int i = 0; i < n; i++)
+        compute_glcm(raw + (size_t)i * PIXELS, out + (size_t)i * GLCM_DIM);
+}
+
+static inline int32_t cwht_similarity(const int16_t *a, const int16_t *b) {
+    int32_t sim = 0;
+    for (int i = 0; i < CWHT_DIM; i++) sim -= abs((int)a[i] - (int)b[i]);
+    return sim;
+}
+static inline int32_t symm_similarity(int32_t a, int32_t b) {
+    return -(int32_t)abs(a - b);
+}
+static inline int32_t glcm_similarity(const int16_t *a, const int16_t *b) {
+    int32_t sim = 0;
+    for (int i = 0; i < GLCM_DIM; i++) sim -= abs((int)a[i] - (int)b[i]);
+    return sim;
+}
+
 /* === Vote (MTFP: per-channel with trit-flip neighbors) === */
 static void vote_mtfp(uint32_t*votes,int img){
     memset(votes,0,TRAIN_N*sizeof(uint32_t));
@@ -390,6 +491,7 @@ typedef struct {
     int32_t div_sim,cent_sim,prof_sim;
     int32_t gdiv_sim;
     int32_t lbp_sim,haar_sim,goh_sim;
+    int32_t cwht_sim,symm_sim,glcm_sim;
     int64_t combined;
 } cand_t;
 
@@ -423,6 +525,10 @@ static void compute_base(cand_t*cands,int nc,int ti,int16_t q_cent,const int16_t
         cands[j].lbp_sim=lbp_similarity(q_lbp,lbp_train+(size_t)id*LBP_DIM);
         cands[j].haar_sim=haar_similarity(q_haar,haar_train+(size_t)id*HAAR_DIM);
         cands[j].goh_sim=goh_similarity(q_goh,goh_train+(size_t)id*GOH_DIM);
+        /* Phase 2 DSP */
+        cands[j].cwht_sim=cwht_similarity(cwht_test+(size_t)ti*CWHT_DIM,cwht_train+(size_t)id*CWHT_DIM);
+        cands[j].symm_sim=symm_similarity(symm_test[ti],symm_train[id]);
+        cands[j].glcm_sim=glcm_similarity(glcm_test+(size_t)ti*GLCM_DIM,glcm_train+(size_t)id*GLCM_DIM);
     }
 }
 
@@ -435,6 +541,7 @@ static int run_static_dsp(const cand_t*pre,const int*nc_arr,
                            const int16_t*qg,const int16_t*tg,int nreg,
                            int w_c,int w_p,int w_d,int w_g,int sc,
                            int w_lbp,int w_haar,int w_goh,
+                           int w_cwht,int w_symm,int w_glcm,
                            int start,int end,uint8_t*preds){
     int correct=0;
     for(int i=start;i<end;i++){
@@ -445,12 +552,15 @@ static int run_static_dsp(const cand_t*pre,const int*nc_arr,
         int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
         int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
         int wl=(int)(s*w_lbp/(s+mad)),wh=(int)(s*w_haar/(s+mad)),wo=(int)(s*w_goh/(s+mad));
+        int wcw=(int)(s*w_cwht/(s+mad)),wsy=(int)(s*w_symm/(s+mad)),wgl=(int)(s*w_glcm/(s+mad));
         for(int j=0;j<nc;j++)
             cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg
                 +(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim
                 +(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim
                 +(int64_t)wl*cands[j].lbp_sim+(int64_t)wh*cands[j].haar_sim
-                +(int64_t)wo*cands[j].goh_sim;
+                +(int64_t)wo*cands[j].goh_sim
+                +(int64_t)wcw*cands[j].cwht_sim+(int64_t)wsy*cands[j].symm_sim
+                +(int64_t)wgl*cands[j].glcm_sim;
         qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
         int pred=knn_vote(cands,nc,3);
         if(preds)preds[i]=(uint8_t)pred;
@@ -464,6 +574,7 @@ static int run_bayesian_dsp(const cand_t*pre,const int*nc_arr,
                              const int16_t*qg,const int16_t*tg,int nreg,
                              int w_c,int w_p,int w_d,int w_g,int sc,
                              int w_lbp,int w_haar,int w_goh,
+                             int w_cwht,int w_symm,int w_glcm,
                              int decay_S,int K_seq,int topo_w,
                              int start,int end,uint8_t*preds){
     int correct=0;
@@ -475,12 +586,15 @@ static int run_bayesian_dsp(const cand_t*pre,const int*nc_arr,
         int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
         int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
         int wl=(int)(s*w_lbp/(s+mad)),wh=(int)(s*w_haar/(s+mad)),wo=(int)(s*w_goh/(s+mad));
+        int wcw=(int)(s*w_cwht/(s+mad)),wsy=(int)(s*w_symm/(s+mad)),wgl=(int)(s*w_glcm/(s+mad));
         for(int j=0;j<nc;j++)
             cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg
                 +(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim
                 +(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim
                 +(int64_t)wl*cands[j].lbp_sim+(int64_t)wh*cands[j].haar_sim
-                +(int64_t)wo*cands[j].goh_sim;
+                +(int64_t)wo*cands[j].goh_sim
+                +(int64_t)wcw*cands[j].cwht_sim+(int64_t)wsy*cands[j].symm_sim
+                +(int64_t)wgl*cands[j].glcm_sim;
         qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
         int64_t state[N_CLASSES];memset(state,0,sizeof(state));
         int ks=K_seq<nc?K_seq:nc;
@@ -497,6 +611,7 @@ static int run_pipeline_dsp(const cand_t*pre,const int*nc_arr,
                              const int16_t*qg,const int16_t*tg,int nreg,
                              int w_c,int w_p,int w_d,int w_g,int sc,
                              int w_lbp,int w_haar,int w_goh,
+                             int w_cwht,int w_symm,int w_glcm,
                              int decay_S,int K_a,int topo_w,
                              int gain,int exp_S,int penalty_val,int K_b,
                              int start,int end,uint8_t*preds){
@@ -509,12 +624,15 @@ static int run_pipeline_dsp(const cand_t*pre,const int*nc_arr,
         int mad=compute_mad(cands,nc);int64_t s=(int64_t)sc;
         int wc=(int)(s*w_c/(s+mad)),wp=(int)(s*w_p/(s+mad)),wd=(int)(s*w_d/(s+mad)),wg=(int)(s*w_g/(s+mad));
         int wl=(int)(s*w_lbp/(s+mad)),wh=(int)(s*w_haar/(s+mad)),wo=(int)(s*w_goh/(s+mad));
+        int wcw=(int)(s*w_cwht/(s+mad)),wsy=(int)(s*w_symm/(s+mad)),wgl=(int)(s*w_glcm/(s+mad));
         for(int j=0;j<nc;j++)
             cands[j].combined=(int64_t)256*cands[j].dot_px+(int64_t)192*cands[j].dot_vg
                 +(int64_t)wc*cands[j].cent_sim+(int64_t)wp*cands[j].prof_sim
                 +(int64_t)wd*cands[j].div_sim+(int64_t)wg*cands[j].gdiv_sim
                 +(int64_t)wl*cands[j].lbp_sim+(int64_t)wh*cands[j].haar_sim
-                +(int64_t)wo*cands[j].goh_sim;
+                +(int64_t)wo*cands[j].goh_sim
+                +(int64_t)wcw*cands[j].cwht_sim+(int64_t)wsy*cands[j].symm_sim
+                +(int64_t)wgl*cands[j].glcm_sim;
         qsort(cands,(size_t)nc,sizeof(cand_t),cmp_comb_d);
         int64_t h[N_CLASSES];memset(h,0,sizeof(h));
         int ka=K_a<nc?K_a:nc;
@@ -630,6 +748,30 @@ int main(int argc,char**argv){
     compute_goh_all_pk(pk_hgrad_test,pk_vgrad_test,goh_test,TEST_N,PACKED_PAD);
     printf("  Gradient orientation: %.2fs\n",now_sec()-t_goh);
 
+    /* Collar WHT */
+    printf("  Collar WHT: "); double tcw=now_sec();
+    cwht_train=malloc((size_t)TRAIN_N*CWHT_DIM*sizeof(int16_t));
+    cwht_test=malloc((size_t)TEST_N*CWHT_DIM*sizeof(int16_t));
+    compute_cwht_all(raw_train_img,cwht_train,TRAIN_N);
+    compute_cwht_all(raw_test_img,cwht_test,TEST_N);
+    printf("%.2fs\n",now_sec()-tcw);
+
+    /* Symmetry */
+    printf("  Symmetry: "); double tsy=now_sec();
+    symm_train=malloc((size_t)TRAIN_N*sizeof(int32_t));
+    symm_test=malloc((size_t)TEST_N*sizeof(int32_t));
+    compute_symmetry_all(raw_train_img,symm_train,TRAIN_N);
+    compute_symmetry_all(raw_test_img,symm_test,TEST_N);
+    printf("%.2fs\n",now_sec()-tsy);
+
+    /* GLCM contrast */
+    printf("  GLCM contrast: "); double tgl=now_sec();
+    glcm_train=malloc((size_t)TRAIN_N*GLCM_DIM*sizeof(int16_t));
+    glcm_test=malloc((size_t)TEST_N*GLCM_DIM*sizeof(int16_t));
+    compute_glcm_all(raw_train_img,glcm_train,TRAIN_N);
+    compute_glcm_all(raw_test_img,glcm_test,TEST_N);
+    printf("%.2fs\n",now_sec()-tgl);
+
     printf("  DSP total: %.2fs\n\n",now_sec()-t_lbp);
 
     /* 7. Free temp int8 arrays */
@@ -676,7 +818,7 @@ int main(int argc,char**argv){
     printf("=== Ablation (%s val, images 0-%d) ===\n\n",ds,VAL_N-1);
 
     /* Baseline: no DSP features */
-    int baseline=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,0,0,0,0,VAL_N,NULL);
+    int baseline=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,0,0,0,0,0,0,0,VAL_N,NULL);
     printf("%-40s %-10s %s\n","Method","Val Acc","Delta");
     printf("%-40s %5.2f%%     %s\n","MTFP baseline (no DSP)",100.0*baseline/VAL_N,"---");
 
@@ -688,7 +830,7 @@ int main(int argc,char**argv){
     int best_lbp_c=baseline,best_lbp_w=0;
     for(int wi=1;wi<n_wdsp;wi++){
         int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                              wdsp_vals[wi],0,0,0,VAL_N,NULL);
+                              wdsp_vals[wi],0,0,0,0,0,0,VAL_N,NULL);
         if(c>best_lbp_c){best_lbp_c=c;best_lbp_w=wdsp_vals[wi];}
     }
     printf("+ LBP (w=%-3d)                            %5.2f%%     %+.2f\n",
@@ -698,7 +840,7 @@ int main(int argc,char**argv){
     int best_haar_c=baseline,best_haar_w=0;
     for(int wi=1;wi<n_wdsp;wi++){
         int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                              0,wdsp_vals[wi],0,0,VAL_N,NULL);
+                              0,wdsp_vals[wi],0,0,0,0,0,VAL_N,NULL);
         if(c>best_haar_c){best_haar_c=c;best_haar_w=wdsp_vals[wi];}
     }
     printf("+ Haar (w=%-3d)                           %5.2f%%     %+.2f\n",
@@ -708,7 +850,7 @@ int main(int argc,char**argv){
     int best_goh_c=baseline,best_goh_w=0;
     for(int wi=1;wi<n_wdsp;wi++){
         int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                              0,0,wdsp_vals[wi],0,VAL_N,NULL);
+                              0,0,wdsp_vals[wi],0,0,0,0,VAL_N,NULL);
         if(c>best_goh_c){best_goh_c=c;best_goh_w=wdsp_vals[wi];}
     }
     printf("+ GOH (w=%-3d)                            %5.2f%%     %+.2f\n",
@@ -721,13 +863,60 @@ int main(int argc,char**argv){
     for(int gi=0;gi<n_wdsp;gi++){
         if(wdsp_vals[li]==0&&wdsp_vals[hi]==0&&wdsp_vals[gi]==0)continue;
         int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                              wdsp_vals[li],wdsp_vals[hi],wdsp_vals[gi],0,VAL_N,NULL);
+                              wdsp_vals[li],wdsp_vals[hi],wdsp_vals[gi],0,0,0,0,VAL_N,NULL);
         if(c>best_all_c){best_all_c=c;best_all_lbp=wdsp_vals[li];
                          best_all_haar=wdsp_vals[hi];best_all_goh=wdsp_vals[gi];}
     }
     printf("+ All DSP (lbp=%d,haar=%d,goh=%d)     %5.2f%%     %+.2f\n",
            best_all_lbp,best_all_haar,best_all_goh,
            100.0*best_all_c/VAL_N,100.0*(best_all_c-baseline)/VAL_N);
+
+    /* Phase 2 DSP: individual ablation */
+    printf("\n--- Phase 2 DSP features (collar WHT, symmetry, GLCM) ---\n");
+    int best_cwht_c=best_all_c,best_cwht_w=0;
+    for(int wi=0;wi<n_wdsp;wi++){
+        if(wdsp_vals[wi]==0)continue;
+        int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                              best_all_lbp,best_all_haar,best_all_goh,
+                              wdsp_vals[wi],0,0,0,VAL_N,NULL);
+        if(c>best_cwht_c){best_cwht_c=c;best_cwht_w=wdsp_vals[wi];}
+    }
+    printf("+ Collar WHT (w=%d)                      %5.2f%%     %+.2f\n",
+           best_cwht_w,100.0*best_cwht_c/VAL_N,100.0*(best_cwht_c-best_all_c)/VAL_N);
+
+    int best_symm_c=best_all_c,best_symm_w=0;
+    for(int wi=0;wi<n_wdsp;wi++){
+        if(wdsp_vals[wi]==0)continue;
+        int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                              best_all_lbp,best_all_haar,best_all_goh,
+                              0,wdsp_vals[wi],0,0,VAL_N,NULL);
+        if(c>best_symm_c){best_symm_c=c;best_symm_w=wdsp_vals[wi];}
+    }
+    printf("+ Symmetry (w=%d)                         %5.2f%%     %+.2f\n",
+           best_symm_w,100.0*best_symm_c/VAL_N,100.0*(best_symm_c-best_all_c)/VAL_N);
+
+    int best_glcm_c=best_all_c,best_glcm_w=0;
+    for(int wi=0;wi<n_wdsp;wi++){
+        if(wdsp_vals[wi]==0)continue;
+        int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                              best_all_lbp,best_all_haar,best_all_goh,
+                              0,0,wdsp_vals[wi],0,VAL_N,NULL);
+        if(c>best_glcm_c){best_glcm_c=c;best_glcm_w=wdsp_vals[wi];}
+    }
+    printf("+ GLCM (w=%d)                             %5.2f%%     %+.2f\n",
+           best_glcm_w,100.0*best_glcm_c/VAL_N,100.0*(best_glcm_c-best_all_c)/VAL_N);
+
+    /* Combined phase 1 + phase 2 */
+    int best_p2_c=best_all_c,bp2_cwht=0,bp2_symm=0,bp2_glcm=0;
+    for(int ci=0;ci<n_wdsp;ci++)for(int si=0;si<n_wdsp;si++)for(int gi=0;gi<n_wdsp;gi++){
+        if(wdsp_vals[ci]==0&&wdsp_vals[si]==0&&wdsp_vals[gi]==0)continue;
+        int c=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
+                              best_all_lbp,best_all_haar,best_all_goh,
+                              wdsp_vals[ci],wdsp_vals[si],wdsp_vals[gi],0,VAL_N,NULL);
+        if(c>best_p2_c){best_p2_c=c;bp2_cwht=wdsp_vals[ci];bp2_symm=wdsp_vals[si];bp2_glcm=wdsp_vals[gi];}
+    }
+    printf("+ All P2 (cwht=%d,symm=%d,glcm=%d)   %5.2f%%     %+.2f\n",
+           bp2_cwht,bp2_symm,bp2_glcm,100.0*best_p2_c/VAL_N,100.0*(best_p2_c-best_all_c)/VAL_N);
 
     /* ================================================================
      * PHASE 2: Best config on holdout + MNIST check
@@ -737,6 +926,7 @@ int main(int argc,char**argv){
     /* Holdout with best DSP weights */
     int hold_dsp=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                  best_all_lbp,best_all_haar,best_all_goh,
+                                 bp2_cwht,bp2_symm,bp2_glcm,
                                  HOLDOUT_START,TEST_N,preds);
     int hold_n=TEST_N-HOLDOUT_START;
     printf("  %s holdout: %.2f%% (%d/%d)\n",ds,100.0*hold_dsp/hold_n,hold_dsp,hold_n);
@@ -744,16 +934,17 @@ int main(int argc,char**argv){
 
     /* Holdout with no DSP for comparison */
     int hold_base=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                                  0,0,0,HOLDOUT_START,TEST_N,NULL);
+                                  0,0,0,0,0,0,HOLDOUT_START,TEST_N,NULL);
     printf("  %s holdout baseline: %.2f%%\n",ds,100.0*hold_base/hold_n);
     printf("  Delta: %+.2f pp\n\n",100.0*(hold_dsp-hold_base)/hold_n);
 
     /* Full 10K with best DSP */
     int full_dsp=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                  best_all_lbp,best_all_haar,best_all_goh,
+                                 bp2_cwht,bp2_symm,bp2_glcm,
                                  0,TEST_N,preds);
     int full_base=run_static_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
-                                  0,0,0,0,TEST_N,NULL);
+                                  0,0,0,0,0,0,0,TEST_N,NULL);
     printf("  %s full 10K:  %.2f%% (baseline %.2f%%, delta %+.2f pp)\n\n",
            ds,100.0*full_dsp/TEST_N,100.0*full_base/TEST_N,100.0*(full_dsp-full_base)/TEST_N);
     report(preds,"Best DSP (full 10K)",full_dsp,0,TEST_N);
@@ -786,6 +977,7 @@ int main(int argc,char**argv){
         for(int di=0;di<3;di++)for(int ki=0;ki<3;ki++)for(int ti=0;ti<3;ti++){
             int c=run_bayesian_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                     best_all_lbp,best_all_haar,best_all_goh,
+                                    bp2_cwht,bp2_symm,bp2_glcm,
                                     dS_vals[di],Ks_vals[ki],tw_vals[ti],0,VAL_N,NULL);
             if(c>best_c){best_c=c;best_dS=dS_vals[di];best_Ks=Ks_vals[ki];best_tw=tw_vals[ti];}
         }
@@ -795,6 +987,7 @@ int main(int argc,char**argv){
         if(best_c>best_all_c){
             int hold_seq=run_bayesian_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                            best_all_lbp,best_all_haar,best_all_goh,
+                                           bp2_cwht,bp2_symm,bp2_glcm,
                                            best_dS,best_Ks,best_tw,HOLDOUT_START,TEST_N,preds);
             printf("  Bayesian+DSP holdout: %.2f%% (%d/%d)\n",100.0*hold_seq/hold_n,hold_seq,hold_n);
             report(preds,"Bayesian+DSP (holdout)",hold_seq,HOLDOUT_START,TEST_N);
@@ -810,6 +1003,7 @@ int main(int argc,char**argv){
         for(int gi=0;gi<2;gi++)for(int ei=0;ei<2;ei++)for(int pi=0;pi<2;pi++)for(int bi=0;bi<2;bi++){
             int c=run_pipeline_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                     best_all_lbp,best_all_haar,best_all_goh,
+                                    bp2_cwht,bp2_symm,bp2_glcm,
                                     dS_vals[di],Ka_vals[ki],tw_vals[ti],
                                     g_vals[gi],eS_vals[ei],p_vals[pi],Kb_vals[bi],0,VAL_N,NULL);
             if(c>best_c){best_c=c;best_dS=dS_vals[di];best_Ka=Ka_vals[ki];best_tw=tw_vals[ti];
@@ -821,6 +1015,7 @@ int main(int argc,char**argv){
         if(best_c>best_all_c){
             int hold_seq=run_pipeline_dsp(pre,nc_arr,qg,tg,nreg,w_c,w_p,w_d,w_g,sc,
                                            best_all_lbp,best_all_haar,best_all_goh,
+                                           bp2_cwht,bp2_symm,bp2_glcm,
                                            best_dS,best_Ka,best_tw,
                                            best_g,best_eS,best_p,best_Kb,HOLDOUT_START,TEST_N,preds);
             printf("  Pipeline+DSP holdout: %.2f%% (%d/%d)\n",100.0*hold_seq/hold_n,hold_seq,hold_n);
@@ -836,6 +1031,7 @@ int main(int argc,char**argv){
     free(cent_train);free(cent_test);free(hprof_train);free(hprof_test);
     free(divneg_train);free(divneg_test);free(divneg_cy_train);free(divneg_cy_test);
     free(lbp_train);free(lbp_test);free(haar_train);free(haar_test);free(goh_train);free(goh_test);
+    free(cwht_train);free(cwht_test);free(symm_train);free(symm_test);free(glcm_train);free(glcm_test);
     free(px_idx_pool);free(hg_idx_pool);free(vg_idx_pool);
     free(px_tr);free(px_te);free(hg_tr);free(hg_te);free(vg_tr);free(vg_te);
     free(pk_tern_train);free(pk_tern_test);free(pk_hgrad_train);free(pk_hgrad_test);free(pk_vgrad_train);free(pk_vgrad_test);
