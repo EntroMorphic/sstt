@@ -21,7 +21,8 @@ CORE = $(BUILD)/sstt_topo9_val \
        $(BUILD)/sstt_kinvariance \
        $(BUILD)/sstt_ann_baseline \
        $(BUILD)/sstt_hybrid_retrieval \
-       $(BUILD)/sstt_mtfp
+       $(BUILD)/sstt_mtfp \
+       $(BUILD)/sstt_mtfp_diagnose
 
 # Analysis: diagnostic and validation tools
 ANALYSIS = $(BUILD)/sstt_diagnose \
@@ -155,6 +156,9 @@ $(BUILD)/sstt_hybrid_retrieval: src/core/sstt_hybrid_retrieval.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(BUILD)/sstt_mtfp: src/core/sstt_mtfp.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+$(BUILD)/sstt_mtfp_diagnose: src/core/sstt_mtfp_diagnose.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 # ================================================================
